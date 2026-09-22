@@ -1,4 +1,16 @@
 import { useState, useEffect, useRef } from "react";
+import AuthScreen from "./components/AuthScreen.jsx";
+import {
+  useAuth,
+  useSyncedTable,
+  productFromRow,
+  productToRow,
+  saleFromRow,
+  saleToRow,
+  expenseFromRow,
+  expenseToRow,
+  newId,
+} from "./lib/data.js";
 
 const C = {
   bg: "#F7F8FC", white: "#FFFFFF", text: "#1A1A2E", muted: "#8B8FA8", border: "#EAECF5",
@@ -102,7 +114,7 @@ const parseCSV = (text) => {
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
     if (!name||!sku||!stockRaw) return null;
     const category=get("category")||"Otro";
-    return { id:Date.now()+i,name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦" };
+    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦" };
   }).filter(Boolean);
 };
 
@@ -198,7 +210,7 @@ const STYLES = `
 `;
 
 // ── Sidebar (desktop) ─────────────────────────────────────────────────────────
-function Sidebar({ tab, setTab, lowStock }) {
+function Sidebar({ tab, setTab, lowStock, signOut }) {
   return (
     <aside className="sidebar">
       {/* Logo */}
@@ -239,23 +251,77 @@ function Sidebar({ tab, setTab, lowStock }) {
       )}
 
       {/* Footer */}
-      <div style={{ padding:"16px 24px", borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", fontWeight:600 }}>stokly v1.0 · Cali, CO</div>
+      <div style={{ padding:"16px 24px", borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+        <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", fontWeight:600 }}>stokly v2.0 · Cali, CO</div>
+        <button onClick={signOut} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.5)", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>⏻ Salir</button>
       </div>
     </aside>
   );
 }
 
+// ── Splash (carga) ────────────────────────────────────────────────────────────
+function Splash({ text }) {
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:C.bg, gap:16, fontFamily:"'Nunito',sans-serif" }}>
+      <div style={{ width:56, height:56, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:18, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:28, animation:"spinPulse 1.2s ease-in-out infinite" }}>S</div>
+      <div style={{ fontWeight:800, fontSize:14, color:C.muted }}>{text}</div>
+      <style>{`@keyframes spinPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.08);opacity:.7}}`}</style>
+    </div>
+  );
+}
+
 // ── App Shell ─────────────────────────────────────────────────────────────────
 export default function Stokly() {
+  const { user, initializing, signOut } = useAuth();
   const [tab, setTab] = useState("home");
-  const [products, setProducts] = useState(INIT_PRODUCTS);
-  const [sales, setSales] = useState(INIT_SALES);
-  const [expenses, setExpenses] = useState(INIT_EXPENSES);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [importView, setImportView] = useState("file"); // file | sheet
   const width = useWindowWidth();
   const isMobile = width < 768;
+
+  // Tablas conectadas a Supabase (carga + guardado automático)
+  const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow }, user?.id);
+  const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow     }, user?.id);
+  const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow  }, user?.id);
+
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
+
+  // Primera vez: cargar datos de ejemplo para que el panel no arranque vacío
+  const seedRef = useRef(false);
+  useEffect(() => {
+    if (!user || pStatus !== "ready" || seedRef.current) return;
+    if (products.length > 0) { seedRef.current = true; return; }
+    seedRef.current = true;
+    setProducts(INIT_PRODUCTS.map(p => ({ ...p, id: String(p.id) })));
+    setSales(INIT_SALES.map(s => ({ ...s, id: String(s.id), productId: String(s.productId) })));
+    setExpenses(INIT_EXPENSES.map(e => ({ ...e, id: String(e.id) })));
+    showToast("✨ Cargamos datos de ejemplo");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, pStatus, products.length]);
+
+  // Pantalla de carga / login
+  if (initializing) return <Splash text="Cargando stokly…" />;
+  if (!user) return <AuthScreen />;
+  if (pStatus === "loading" || pStatus === "idle") return <Splash text="Sincronizando tus datos…" />;
+  if (pStatus === "error") {
+    return (
+      <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, fontFamily:"'Nunito',sans-serif", padding:20 }}>
+        <div style={{ background:"white", borderRadius:22, padding:32, maxWidth:440, textAlign:"center", boxShadow:"0 8px 30px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize:40, marginBottom:10 }}>⚠️</div>
+          <div style={{ fontWeight:900, fontSize:18, marginBottom:8 }}>No pudimos conectar con Supabase</div>
+          <div style={{ fontSize:13, color:C.muted, fontWeight:600, marginBottom:18, lineHeight:1.5 }}>
+            Faltan las tablas en la base de datos o hubo un problema de red.
+            Ejecuta <b>supabase/schema.sql</b> en el SQL Editor de Supabase y recarga.
+          </div>
+          <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
+            <button className="btn-main" onClick={() => location.reload()}>Recargar</button>
+            <button className="btn-outline" onClick={() => signOut()}>Cerrar sesión</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const lowStock = products.filter(p => p.stock <= p.minStock);
   const totalSales = sales.reduce((a,s) => a+s.total, 0);
@@ -263,14 +329,12 @@ export default function Stokly() {
   const profit = totalSales - totalExpenses;
   const currentTab = TABS.find(t => t.id === tab);
 
-  function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
-
   return (
     <div className="app-root">
       <style>{STYLES}</style>
 
       {/* Desktop sidebar */}
-      <Sidebar tab={tab} setTab={setTab} lowStock={lowStock} />
+      <Sidebar tab={tab} setTab={setTab} lowStock={lowStock} signOut={signOut} />
 
       {/* Main */}
       <div className="main-wrap">
@@ -289,14 +353,15 @@ export default function Stokly() {
             {tab==="inventory" && <button onClick={() => setModal("product")} className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Producto</button>}
             {tab==="sales"     && <button onClick={() => setModal("sale")}    className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Venta</button>}
             {tab==="expenses"  && <button onClick={() => setModal("expense")} className="btn-main btn-orange" style={{ padding:"9px 16px", fontSize:13 }}>+ Gasto</button>}
-            <div style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15 }}>A</div>
+            <button onClick={() => signOut()} title="Cerrar sesión" style={{ background:C.bg, border:"none", borderRadius:12, padding:"7px 10px", cursor:"pointer", fontWeight:800, fontSize:12, color:C.muted, fontFamily:"inherit" }}>⏻</button>
+            <div title={user.email} style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15 }}>{(user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}</div>
           </div>
         </div>
 
         {/* Page content */}
         <div className="page-content">
           {tab==="home"      && <Home      products={products} sales={sales} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
-          {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} isMobile={isMobile} />}
+          {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} />}
           {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
@@ -315,8 +380,8 @@ export default function Stokly() {
       </div>
 
       {modal==="product" && <AddProductModal onClose={() => setModal(null)} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
-      {modal==="import"  && <ImportModal    onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
-      {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>p.id===pid?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
+      {modal==="import"  && <ImportModal    importView={importView} onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
+      {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -421,7 +486,7 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
 }
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
-function Inventory({ products, setProducts, lowStock, showToast, setModal, isMobile }) {
+function Inventory({ products, setProducts, lowStock, showToast, setModal, setImportView, isMobile }) {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState("visual");
   const [filterCat, setFilterCat] = useState("Todos");
@@ -446,7 +511,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, isMob
           <button className={`view-btn ${viewMode==="visual"?"active":""}`} onClick={()=>setViewMode("visual")}>📋 Visual</button>
           <button className={`view-btn ${viewMode==="list"?"active":""}`} onClick={()=>setViewMode("list")}>☰ Lista</button>
         </div>
-        <button onClick={()=>setModal("import")} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Importar</button>
+        <button onClick={()=>{setImportView("file");setModal("import");}} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Excel / CSV</button>
+        <button onClick={()=>{setImportView("sheet");setModal("import");}} style={{ background:C.greenLight, color:C.green, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🔗 Google Sheets</button>
       </div>
 
       {/* Category filters */}
@@ -873,7 +939,7 @@ function AddProductModal({ onClose, onSave }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",category:"Ropa" });
   function save() {
     if (!f.name||!f.sku||!f.stock) return;
-    onSave({ ...f, id:Date.now(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦" });
+    onSave({ ...f, id:newId(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦" });
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -905,8 +971,8 @@ function AddProductModal({ onClose, onSave }) {
 
 function AddSaleModal({ products, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
-  const p=products.find(x=>x.id===+pid); const total=p?p.price*qty:0;
-  function save() { if(!p||qty<1||p.stock<qty) return; onSave({id:Date.now(),productId:+pid,qty:+qty,total,date:new Date().toISOString().split("T")[0],method},+pid,+qty); }
+  const p=products.find(x=>String(x.id)===String(pid)); const total=p?p.price*qty:0;
+  function save() { if(!p||qty<1||p.stock<qty) return; onSave({id:newId(),productId:String(pid),qty:+qty,total,date:new Date().toISOString().split("T")[0],method},String(pid),+qty); }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
@@ -917,7 +983,7 @@ function AddSaleModal({ products, onClose, onSave }) {
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Producto</div>
             <select className="stk-input" value={pid} onChange={e=>setPid(e.target.value)}>
               <option value="">Selecciona un producto</option>
-              {products.filter(p=>p.stock>0).map(p=><option key={p.id} value={p.id}>{p.emoji} {p.name} — {p.color}/T{p.size} ({p.stock} disp.) — {fmt(p.price)}</option>)}
+              {products.filter(p=>p.stock>0).map(p=><option key={p.id} value={String(p.id)}>{p.emoji} {p.name} — {p.color}/T{p.size} ({p.stock} disp.) — {fmt(p.price)}</option>)}
             </select>
           </div>
           <div>
@@ -948,7 +1014,7 @@ function AddSaleModal({ products, onClose, onSave }) {
 function AddExpenseModal({ onClose, onSave }) {
   const [f,setF]=useState({concept:"",amount:"",category:"Operacional"});
   const ce={Operacional:"🏪",Compras:"🛍️",Marketing:"📱",Logística:"🚚",Otro:"💡"};
-  function save() { if(!f.concept||!f.amount) return; onSave({...f,id:Date.now(),amount:+f.amount,date:new Date().toISOString().split("T")[0],emoji:ce[f.category]||"💡"}); }
+  function save() { if(!f.concept||!f.amount) return; onSave({...f,id:newId(),amount:+f.amount,date:new Date().toISOString().split("T")[0],emoji:ce[f.category]||"💡"}); }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
@@ -973,9 +1039,11 @@ function AddExpenseModal({ onClose, onSave }) {
   );
 }
 
-function ImportModal({ onClose, onImport }) {
+function ImportModal({ onClose, onImport, importView="file" }) {
   const [step,setStep]=useState("upload"); const [dragOver,setDragOver]=useState(false);
   const [parsed,setParsed]=useState([]); const [error,setError]=useState(""); const [mode,setMode]=useState("merge"); const [fileName,setFileName]=useState("");
+  const [src,setSrc]=useState(importView==="sheet"?"sheet":"file"); // "file" | "sheet"
+  const [sheetUrl,setSheetUrl]=useState(""); const [loadingSheet,setLoadingSheet]=useState(false);
   const fileRef=useRef();
   function processFile(file) {
     if(!file)return; setFileName(file.name); setError("");
@@ -987,19 +1055,80 @@ function ImportModal({ onClose, onImport }) {
       const r=new FileReader(); r.onload=e=>{const p=parseCSV(e.target.result);if(!p.length){setError("Sin productos.");return;}setParsed(p);setStep("preview");};r.readAsText(file,"UTF-8");
     } else setError("Usa .xlsx o .csv");
   }
+
+  // Convierte cualquier enlace de Google Sheets a su exportación CSV
+  function sheetsToCsv(u){
+    const s=(u||"").trim();
+    if(!s) return null;
+    if(/\/export\?format=csv/i.test(s)) return s;
+    const m=s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if(!m) return null;
+    const gid=(s.match(/[#&?]gid=(\d+)/)||[])[1];
+    return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid?`&gid=${gid}`:""}`;
+  }
+  async function loadSheet(){
+    const url=sheetsToCsv(sheetUrl);
+    if(!url){ setError("Pega un enlace válido de Google Sheets (que contenga /spreadsheets/d/)"); return; }
+    setLoadingSheet(true); setError(""); setFileName("Google Sheets");
+    try{
+      const res=await fetch(url,{headers:{Accept:"text/csv"}});
+      if(!res.ok) throw new Error("No pude leer la hoja ("+res.status+"). Comparte: Compartir → Cualquier persona con el enlace → Lector.");
+      const text=await res.text();
+      const t=text.trim();
+      if(t.startsWith("<!DOCTYPE")||t.startsWith("<html"))
+        throw new Error("Google devolvió una página, no datos. Comparte la hoja: Compartir → Cualquier persona con el enlace → Lector.");
+      const p=parseCSV(text);
+      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Usa encabezados: nombre, sku, stock, precio..."); return; }
+      setParsed(p); setStep("preview");
+    }catch(err){ setError(err.message||"No se pudo conectar con Google Sheets."); }
+    finally{ setLoadingSheet(false); }
+  }
+
+  const srcBtn=(id,emoji,label,desc,color,bg)=>(
+    <button key={id} onClick={()=>{setSrc(id);setError("");}} style={{ flex:1,background:src===id?bg:C.bg,border:`2px solid ${src===id?color:C.border}`,borderRadius:14,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"left" }}>
+      <div style={{ fontWeight:900,fontSize:13,color:src===id?color:C.text }}>{emoji} {label}</div>
+      <div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{desc}</div>
+    </button>
+  );
+
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
         <div className="handle" />
         {step==="upload"&&<>
-          <div style={{ fontWeight:900,fontSize:20,marginBottom:20 }}>📂 Importar masivo</div>
-          <div className={`drop-zone ${dragOver?"drag-over":""}`} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);processFile(e.dataTransfer.files[0]);}} onClick={()=>fileRef.current.click()}>
-            <div style={{ fontSize:40,marginBottom:10 }}>📁</div>
-            <div style={{ fontWeight:900,fontSize:16,marginBottom:6 }}>Arrastra tu archivo</div>
-            <div style={{ fontSize:13,color:C.muted,fontWeight:600 }}>Excel (.xlsx) o CSV</div>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv" style={{ display:"none" }} onChange={e=>processFile(e.target.files[0])} />
+          <div style={{ fontWeight:900,fontSize:20,marginBottom:14 }}>📥 Importar inventario</div>
+
+          {/* Selector de origen */}
+          <div style={{ display:"flex",gap:10,marginBottom:16 }}>
+            {srcBtn("file","📂","Excel / CSV","Sube un archivo",C.blue,C.blueLight)}
+            {srcBtn("sheet","🔗","Google Sheets","Pega el enlace",C.green,C.greenLight)}
           </div>
-          {error&&<div style={{ background:C.redLight,borderRadius:12,padding:12,marginTop:12,fontSize:13,fontWeight:700,color:C.red }}>{error}</div>}
+
+          {src==="file" && (
+            <div className={`drop-zone ${dragOver?"drag-over":""}`} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);processFile(e.dataTransfer.files[0]);}} onClick={()=>fileRef.current.click()}>
+              <div style={{ fontSize:40,marginBottom:10 }}>📁</div>
+              <div style={{ fontWeight:900,fontSize:16,marginBottom:6 }}>Arrastra tu archivo</div>
+              <div style={{ fontSize:13,color:C.muted,fontWeight:600 }}>Excel (.xlsx) o CSV</div>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv" style={{ display:"none" }} onChange={e=>processFile(e.target.files[0])} />
+            </div>
+          )}
+
+          {src==="sheet" && (
+            <div style={{ background:C.greenLight, borderRadius:20, padding:18 }}>
+              <div style={{ fontSize:40,marginBottom:8,textAlign:"center" }}>🔗</div>
+              <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",marginBottom:6 }}>Enlace de tu hoja</div>
+              <input className="stk-input" placeholder="https://docs.google.com/spreadsheets/d/..." value={sheetUrl} onChange={e=>setSheetUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&loadSheet()} />
+              <button className="btn-main" onClick={loadSheet} disabled={loadingSheet} style={{ width:"100%",marginTop:12,opacity:loadingSheet?0.7:1 }}>
+                {loadingSheet?"Leyendo hoja…":"Leer hoja de Google"}
+              </button>
+              <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
+                <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
+                Encabezados necesarios: <b>nombre, sku, stock</b> (opcionales: marca, color, talla, categoría, precio, costo, mínimo).
+              </div>
+            </div>
+          )}
+
+          {error&&<div style={{ background:C.redLight,borderRadius:12,padding:12,marginTop:12,fontSize:13,fontWeight:700,color:C.red,lineHeight:1.5 }}>{error}</div>}
           <button className="btn-outline" onClick={onClose} style={{ width:"100%",marginTop:16 }}>Cancelar</button>
         </>}
         {step==="preview"&&<>
