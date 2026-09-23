@@ -136,6 +136,15 @@ const sumarDiasISO = (iso, n) => { const [y,m,d] = String(iso).split("-").map(Nu
 const restarDiasISO = (n) => sumarDiasISO(hoyISO(), -n);
 const dmISO = (iso) => { const p = String(iso||"").split("-"); return p.length === 3 ? `${Number(p[2])}/${Number(p[1])}` : "…"; };
 
+// Enlace de Google Drive → URL directa que sí carga como foto (https://lh3…)
+const normalizarFotoURL = (v) => {
+  const s = String(v || "").trim();
+  if (!/^https?:\/\//i.test(s)) return "";
+  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|[?&]id=)([a-zA-Z0-9-_]+)/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
+  return s;
+};
+
 // ── Filtros por rango de tiempo (Ventas / Gastos / Finanzas) ─────────────────
 const RANGOS = [
   { id:"todo", label:"Todo" }, { id:"dia", label:"Día" }, { id:"semana", label:"Semana" }, { id:"d15", label:"15 días" },
@@ -554,7 +563,20 @@ export default function Stokly() {
           ]}
         />
       )}
-      {modal==="import"  && <ImportModal    importView={importView} onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
+      {modal==="import"  && <ImportModal    importView={importView} workspaceId={workspaceId} onClose={() => setModal(null)} onImport={(newP,mode,aviso) => {
+        let fotoN = 0;
+        if(mode==="replace") { setProducts(newP); }
+        else {
+          const upd = new Map(); const add = [];
+          newP.forEach(p => { const ex = products.find(x => x.sku === p.sku);
+            if(!ex) add.push(p);
+            else if(p.image && !ex.image){ upd.set(ex.id, {...ex, image:p.image}); fotoN++; }
+          });
+          setProducts(prev => [...prev.map(x => upd.get(x.id) || x), ...add]);
+        }
+        setModal(null);
+        showToast(`✅ ${newP.length} importados${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
+      }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
@@ -1653,15 +1675,19 @@ function AddExpenseModal({ onClose, onSave }) {
   );
 }
 
-function ImportModal({ onClose, onImport, importView="file" }) {
+function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const [step,setStep]=useState("upload"); const [dragOver,setDragOver]=useState(false);
   const [parsed,setParsed]=useState([]); const [error,setError]=useState(""); const [mode,setMode]=useState("merge"); const [fileName,setFileName]=useState("");
   const [src,setSrc]=useState(importView==="sheet"?"sheet":"file"); // "file" | "sheet"
   const [sheetUrl,setSheetUrl]=useState(""); const [loadingSheet,setLoadingSheet]=useState(false);
+  const [fotos,setFotos]=useState({});        // {archivo.jpg: File} fotos adjuntadas
+  const [rotas,setRotas]=useState({});        // {indice:true} enlaces que no cargan
+  const [subiendo,setSubiendo]=useState("");  // "📷 Subiendo fotos… 2/5"
   const fileRef=useRef();
+  const fotosRef=useRef();
   const xlsxOcupado=useRef(false);
-  const PLANTILLA_HEADERS = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (url de la foto)"];
-  const PLANTILLA_EJEMPLO = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","https://placehold.co/400x400"];
+  const PLANTILLA_HEADERS = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (foto o enlace)"];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","camiseta.jpg"];
 
   // Carga la librería XLSX solo si hace falta (compartida por importar y plantilla)
   function cargarXLSX(msgCarga, msgFallo, cb) {
@@ -1746,6 +1772,54 @@ function ImportModal({ onClose, onImport, importView="file" }) {
     finally{ setLoadingSheet(false); }
   }
 
+  // Sube las fotos adjuntadas (se emparejan por nombre de archivo) y arma los productos finales
+  async function importar() {
+    if (subiendo) return;
+    const unicas = [];
+    parsed.forEach(p => {
+      const v = (p.image||"").trim();
+      if (!v || normalizarFotoURL(v)) return;
+      const base = v.split(/[\\/]/).pop().toLowerCase();
+      if (fotos[base] && !unicas.includes(base)) unicas.push(base);
+    });
+    const mapaURL = {};
+    let fallos = 0;
+    if (unicas.length) {
+      for (let i = 0; i < unicas.length; i++) {
+        const base = unicas[i];
+        setSubiendo(`📷 Subiendo fotos… ${i+1}/${unicas.length}`);
+        try { mapaURL[base] = await uploadProductImage(fotos[base], workspaceId); }
+        catch (e) { console.error("[stokly] foto import:", e && e.message); fallos++; }
+      }
+      setSubiendo("✅ Fotos listas — importando…");
+    }
+    let sinFoto = 0;
+    const finalP = parsed.map(p => {
+      const v = (p.image||"").trim();
+      if (!v) return p;
+      const url = normalizarFotoURL(v);
+      if (url) return { ...p, image: url };
+      const base = v.split(/[\\/]/).pop().toLowerCase();
+      if (mapaURL[base]) return { ...p, image: mapaURL[base] };
+      sinFoto++;
+      return { ...p, image: "" };
+    });
+    setSubiendo("");
+    let aviso = "";
+    const rotasN = Object.keys(rotas).length;
+    if (fallos) aviso += `${fallos} foto(s) no se pudieron subir`;
+    if (sinFoto) aviso += (aviso ? " · " : "") + `${sinFoto} sin foto (falta adjuntarla)`;
+    if (rotasN) aviso += (aviso ? " · " : "") + `${rotasN} enlace(s) de imagen no cargan`;
+    onImport(finalP, mode, aviso);
+  }
+
+  const conFoto = parsed.filter(p => !!(p.image||"").trim()).length;
+  const pendAdj = parsed.filter(p => {
+    const v = (p.image||"").trim();
+    if (!v || normalizarFotoURL(v)) return false;
+    return !fotos[v.split(/[\\/]/).pop().toLowerCase()];
+  }).length;
+
   const srcBtn=(id,emoji,label,desc,color,bg)=>(
     <button key={id} onClick={()=>{setSrc(id);setError("");}} style={{ flex:1,background:src===id?bg:C.bg,border:`2px solid ${src===id?color:C.border}`,borderRadius:14,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"left" }}>
       <div style={{ fontWeight:900,fontSize:13,color:src===id?color:C.text }}>{emoji} {label}</div>
@@ -1769,8 +1843,8 @@ function ImportModal({ onClose, onImport, importView="file" }) {
           {/* Plantilla oficial descargable */}
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
-              📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen (url de la foto)</b>.<br/>
-              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · la imagen debe ser un enlace público (https://…)</span>
+              📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen</b>.<br/>
+              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…)</span>
             </div>
             <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
             <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
@@ -1806,7 +1880,7 @@ function ImportModal({ onClose, onImport, importView="file" }) {
         </>}
         {step==="preview"&&<>
           <div style={{ fontWeight:900,fontSize:20,marginBottom:4 }}>✅ Vista previa</div>
-          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos</div>
+          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
           <div style={{ display:"flex",gap:10,marginBottom:16 }}>
             {[{id:"merge",label:"➕ Agregar",desc:"No duplica SKUs"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{ flex:1,background:mode===m.id?C.greenLight:C.bg,border:`2px solid ${mode===m.id?C.green:C.border}`,borderRadius:14,padding:12,cursor:"pointer",fontFamily:"inherit" }}>
@@ -1815,21 +1889,52 @@ function ImportModal({ onClose, onImport, importView="file" }) {
               </button>
             ))}
           </div>
+          {/* Adjuntar fotos desde el celular o la computadora */}
+          <div style={{ background:C.blueLight, borderRadius:14, padding:12, marginBottom:14 }}>
+            <div style={{ fontSize:13, fontWeight:900, marginBottom:4 }}>📎 Adjuntar fotos (opcional)</div>
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:600, lineHeight:1.6, marginBottom:8 }}>
+              En la columna <b>imagen</b> escribe el <b>nombre del archivo</b> de la foto (ej: <i>camiseta.jpg</i>) y aquí adjunta las fotos: Stokly las sube y las deja guardadas en cada producto. Si prefieres, pega un <b>enlace https://…</b> en esa columna (Google Drive también funciona).
+            </div>
+            <input ref={fotosRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{
+              const map = {};
+              Array.from(e.target.files || []).forEach(f => { map[f.name.split(/[\\/]/).pop().toLowerCase()] = f; });
+              setFotos(map); setRotas({});
+            }} />
+            <button className="filter-btn" onClick={() => fotosRef.current.click()}>
+              {Object.keys(fotos).length ? `📷 ${Object.keys(fotos).length} fotos adjuntadas — cambiar` : "📷 Seleccionar fotos del celular/computador"}
+            </button>
+            {pendAdj > 0 && <div style={{ fontSize:11, color:C.orange, fontWeight:800, marginTop:6 }}>⚠️ {pendAdj} producto(s) piden foto y todavía no está adjunta</div>}
+          </div>
           <div className="card" style={{ padding:14,maxHeight:250,overflowY:"auto",marginBottom:16 }}>
-            {parsed.slice(0,40).map((p,i)=>(
+            {parsed.slice(0,40).map((p,i)=>{
+              const val=(p.image||"").trim();
+              const url=normalizarFotoURL(val);
+              const nombreFoto=val&&!url?val.split(/[\\/]/).pop().toLowerCase():"";
+              const adjunta=nombreFoto?!!fotos[nombreFoto]:false;
+              return (
               <div key={i} style={{ display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border }}>
-                {p.image
-                  ? <img src={p.image} alt="" style={{ width:26, height:26, borderRadius:7, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />
+                {url ? (rotas[i]
+                  ? <div style={{ width:26,height:26,borderRadius:7,background:C.redLight,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13 }} title="El enlace no carga">⚠️</div>
+                  : <img src={url} alt="" onError={()=>setRotas(prev=>({...prev,[i]:true}))} style={{ width:26, height:26, borderRadius:7, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />)
+                : nombreFoto
+                  ? <div style={{ width:26,height:26,borderRadius:7,background:adjunta?C.greenLight:C.bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,border:adjunta?"1.5px solid "+C.green:"1.5px dashed "+C.border }} title={nombreFoto}>📷</div>
                   : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}
-                <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div><div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}</div></div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div>
+                  <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}</div>
+                  {rotas[i] && <div style={{ fontSize:10.5,color:C.red,fontWeight:800 }}>⚠️ El enlace no carga — adjunta la foto o corrige el enlace</div>}
+                  {nombreFoto && !adjunta && !rotas[i] && <div style={{ fontSize:10.5,color:C.orange,fontWeight:800 }}>📎 Falta adjuntar "{nombreFoto}"</div>}
+                  {adjunta && <div style={{ fontSize:10.5,color:C.green,fontWeight:800 }}>✅ Foto lista: {nombreFoto}</div>}
+                </div>
                 <span style={{ fontWeight:900,fontSize:12,color:C.green }}>{p.stock} uds</span>
               </div>
-            ))}
+              );
+            })}
             {parsed.length>40&&<div style={{ textAlign:"center",color:C.muted,fontSize:12,padding:8 }}>+{parsed.length-40} más...</div>}
           </div>
           <div style={{ display:"flex",gap:10 }}>
-            <button className="btn-outline" onClick={()=>{setStep("upload");setParsed([]);}} style={{ flex:1 }}>← Volver</button>
-            <button className="btn-main" onClick={()=>onImport(parsed,mode)} style={{ flex:2 }}>Importar {parsed.length}</button>
+            <button className="btn-outline" onClick={()=>{setStep("upload");setParsed([]);setFotos({});setRotas({});}} style={{ flex:1 }}>← Volver</button>
+            <button className="btn-main" onClick={importar} disabled={!!subiendo} style={{ flex:2, opacity:subiendo?0.7:1 }}>{subiendo || `Importar ${parsed.length}`}</button>
           </div>
         </>}
       </div>
