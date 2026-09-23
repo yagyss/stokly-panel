@@ -308,20 +308,8 @@ export default function Stokly() {
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
 
-  // Primera vez: cargar datos de ejemplo para que el panel no arranque vacío
-  // (solo en el panel propio, nunca en uno compartido)
-  const seedRef = useRef(false);
-  useEffect(() => {
-    if (!user || !workspaceId || pStatus !== "ready" || seedRef.current) return;
-    if (workspaceId !== user.id) { seedRef.current = true; return; }
-    if (products.length > 0) { seedRef.current = true; return; }
-    seedRef.current = true;
-    setProducts(INIT_PRODUCTS.map(p => ({ ...p, id: String(p.id) })));
-    setSales(INIT_SALES.map(s => ({ ...s, id: String(s.id), productId: String(s.productId) })));
-    setExpenses(INIT_EXPENSES.map(e => ({ ...e, id: String(e.id) })));
-    showToast("✨ Cargamos datos de ejemplo");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, workspaceId, pStatus, products.length]);
+  // 🚫 Sin datos de ejemplo: el panel empieza vacío y solo muestra lo que TÚ agregas.
+  // (Se eliminó el siembra-demo para que nada vuelva tras vaciar el inventario.)
 
   // Aceptar invitaciones pendientes dirigidas a este correo
   const acceptedRef = useRef(false);
@@ -448,7 +436,7 @@ export default function Stokly() {
         <div className="page-content">
           {tab==="home"      && <Home      products={products} sales={sales} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
           {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} workspaceId={workspaceId} />}
-          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} />}
+          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
           {tab==="metrics"   && <Metrics   products={products} sales={sales} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
@@ -806,8 +794,14 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 }
 
 // ── SALES ─────────────────────────────────────────────────────────────────────
-function Sales({ sales, setSales, products, setProducts, totalSales, isMobile }) {
+function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, showToast }) {
   const byMethod = sales.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
+  const clearSales = () => {
+    if (!window.confirm(`🗑️ ¿Vaciar ventas?\n\nSe eliminarán PERMANENTEMENTE las ${sales.length} ventas registradas.`)) return;
+    if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todas las ventas?")) return;
+    setSales([]);
+    showToast("🗑️ Ventas vaciadas");
+  };
   const colors = { Efectivo:[C.green,C.greenLight], Tarjeta:[C.blue,C.blueLight], Nequi:[C.purple,C.purpleLight], Transferencia:[C.orange,C.orangeLight], Daviplata:[C.red,C.redLight] };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -819,7 +813,12 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile })
         {Object.entries(byMethod).map(([m,total])=>{const[color,bg]=colors[m]||[C.muted,C.bg];return <div key={m} className="stat-card" style={{ background:bg }}><div style={{ fontSize:12,fontWeight:800,color,marginBottom:4 }}>{m}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(total)}</div><div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{pct(total,totalSales)}%</div></div>;})}
       </div>
       <div className="card" style={{ padding:20 }}>
-        <div className="section-title">Historial</div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div className="section-title" style={{ marginBottom:0 }}>Historial</div>
+          {sales.length>0 && (
+            <button onClick={clearSales} title="Borrar todas las ventas (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar ventas</button>
+          )}
+        </div>
         {[...sales].reverse().map(s=>{
           const p=products.find(x=>x.id===s.productId);
           return (
@@ -832,7 +831,10 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile })
                   {s.date} · {s.qty} uds · {s.method}
                 </div>
               </div>
-              <div style={{ fontWeight:900, fontSize:16, color:C.green }}>{fmt(s.total)}</div>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div style={{ fontWeight:900, fontSize:16, color:C.green }}>{fmt(s.total)}</div>
+                <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar la venta del ${s.date} por ${fmt(s.total)}?\n\nSe borrará PERMANENTEMENTE.`)) return; setSales(prev=>prev.filter(x=>x.id!==s.id)); showToast("🗑️ Venta eliminada"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+              </div>
             </div>
           );
         })}
@@ -844,6 +846,12 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile })
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile }) {
   const byCategory = expenses.reduce((acc,e)=>{acc[e.category]=(acc[e.category]||0)+e.amount;return acc;},{});
+  const clearExpenses = () => {
+    if (!window.confirm(`🗑️ ¿Vaciar gastos?\n\nSe eliminarán PERMANENTEMENTE los ${expenses.length} gastos.`)) return;
+    if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todos los gastos?")) return;
+    setExpenses([]);
+    showToast("🗑️ Gastos vaciados");
+  };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ background:"linear-gradient(135deg,#FF8C42,#FF5A5F)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
@@ -854,14 +862,19 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
         {Object.entries(byCategory).map(([cat,amount])=><div key={cat} className="stat-card" style={{ background:C.orangeLight }}><div style={{ fontSize:12,fontWeight:800,color:C.orange,marginBottom:4 }}>{cat}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(amount)}</div></div>)}
       </div>
       <div className="card" style={{ padding:20 }}>
-        <div className="section-title">Historial</div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div className="section-title" style={{ marginBottom:0 }}>Historial</div>
+          {expenses.length>0 && (
+            <button onClick={clearExpenses} title="Borrar todos los gastos (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar gastos</button>
+          )}
+        </div>
         {[...expenses].reverse().map(e=>(
           <div key={e.id} className="row-item">
             <div style={{ width:38,height:38,background:C.orangeLight,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20 }}>{e.emoji}</div>
             <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14 }}>{e.concept}</div><div style={{ fontSize:11,color:C.muted,fontWeight:600 }}>{e.date} · {e.category}</div></div>
             <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4 }}>
               <div style={{ fontWeight:900,fontSize:16,color:C.red }}>{fmt(e.amount)}</div>
-              <button onClick={()=>{setExpenses(prev=>prev.filter(x=>x.id!==e.id));showToast("🗑️ Eliminado");}} style={{ background:"none",border:"none",color:C.muted,fontSize:11,cursor:"pointer",fontWeight:700,fontFamily:"inherit" }}>Borrar</button>
+              <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar el gasto "${e.concept}"?\n\nSe borrará PERMANENTEMENTE.`)) return; setExpenses(prev=>prev.filter(x=>x.id!==e.id)); showToast("🗑️ Gasto eliminado"); }} style={{ background:"none",border:"none",color:C.red,fontSize:11,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Borrar</button>
             </div>
           </div>
         ))}
