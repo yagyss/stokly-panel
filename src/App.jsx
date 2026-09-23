@@ -395,13 +395,6 @@ export default function Stokly() {
                 ))}
               </select>
             )}
-            <button
-              onClick={() => setModal("team")}
-              title="Invitar a tu equipo"
-              style={{ background:C.purpleLight, border:"none", borderRadius:12, padding:"7px 11px", cursor:"pointer", fontWeight:800, fontSize:13, color:C.purple, fontFamily:"inherit" }}
-            >
-              👥{!isMobile && " Equipo"}
-            </button>
             <div style={{ position:"relative" }}>
               <button
                 onClick={() => setUserMenu(v => !v)}
@@ -419,6 +412,13 @@ export default function Stokly() {
                       {user.user_metadata?.display_name && <div style={{ fontWeight:900, fontSize:14, color:"#1A1A2E" }}>{user.user_metadata.display_name}</div>}
                       <div style={{ fontSize:12, color:"#8B8FA8", fontWeight:700, wordBreak:"break-all", lineHeight:1.35 }}>{user.email}</div>
                     </div>
+                    <button
+                      onClick={() => { setUserMenu(false); setModal("team"); }}
+                      title="Invitar a tu equipo"
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.purple, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                    >
+                      👥 Equipo
+                    </button>
                     <button
                       onClick={() => { setUserMenu(false); if (window.confirm("¿Cerrar sesión?")) signOut(); }}
                       style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.red, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
