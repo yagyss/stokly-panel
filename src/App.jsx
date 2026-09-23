@@ -564,6 +564,7 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
 function Inventory({ products, setProducts, lowStock, showToast, setModal, setImportView, isMobile, workspaceId }) {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState("visual");
+  const [viewMenu, setViewMenu] = useState(false); // menú desplegable "Vista"
   const [filterCat, setFilterCat] = useState("Todos");
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [photoTarget, setPhotoTarget] = useState(null);
@@ -622,10 +623,32 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           <input className="stk-input" placeholder="🔍 Busca por nombre, color, talla, marca..." value={search} onChange={e=>setSearch(e.target.value)} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,fontWeight:900 }}>✕</button>}
         </div>
-        <div className="view-toggle">
-          <button className={`view-btn ${viewMode==="visual"?"active":""}`} onClick={()=>setViewMode("visual")}>📋 Visual</button>
-          <button className={`view-btn ${viewMode==="list"?"active":""}`} onClick={()=>setViewMode("list")}>☰ Lista</button>
-          <button className={`view-btn ${viewMode==="table"?"active":""}`} onClick={()=>setViewMode("table")}>🗒️ Tabla</button>
+        {/* Menú desplegable "Vista" (ahorra espacio:3 vistas en1 botón) */}
+        <div style={{ position:"relative", flexShrink:0 }}>
+          <button
+            onClick={() => setViewMenu(v => !v)}
+            title="Cambiar vista del inventario"
+            style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}
+          >
+            👁 Vista {viewMenu ? "▴" : "▾"}
+          </button>
+          {viewMenu && (
+            <>
+              <div onClick={() => setViewMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
+              <div style={{ position:"absolute", top:42, left:0, background:"white", borderRadius:14, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", zIndex:80, overflow:"hidden", minWidth:175, fontFamily:"inherit", textAlign:"left" }}>
+                {[["visual","📋 Visual"],["list","☰ Lista"],["table","🗒️ Tabla"]].map(([id,label]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setViewMode(id); setViewMenu(false); }}
+                    style={{ width:"100%", padding:"12px 14px", background:viewMode===id?C.greenLight:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:13, color:viewMode===id?C.green:C.text, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                  >
+                    <span>{label}</span>
+                    {viewMode===id && <span style={{ marginLeft:"auto", fontWeight:900 }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <button onClick={()=>{setImportView("file");setModal("import");}} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Excel / CSV</button>
         <button onClick={()=>{setImportView("sheet");setModal("import");}} style={{ background:C.greenLight, color:C.green, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🔗 Google Sheets</button>
