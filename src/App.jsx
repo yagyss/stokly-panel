@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { uploadProductImage } from "./lib/image.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
@@ -164,6 +164,9 @@ const STYLES = `
   .filter-btn.active { border-color: #00C896; color: #00C896; background: #E6FAF5; }
   .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; }
   .tab-btn-mob.active { background: #E6FAF5; }
+  /* "+" central de la barra inferior (atajo de agregar rápido) */
+  .fab-add { width:46px; height:46px; flex-shrink:0; align-self:center; border-radius:50%; background:linear-gradient(135deg,#00C896,#4A90FF); color:#fff; border:none; font-size:27px; font-weight:900; line-height:1; cursor:pointer; box-shadow:0 6px 16px rgba(0,200,150,.40); display:flex; align-items:center; justify-content:center; font-family:inherit; padding:0; }
+  .fab-add:active { transform:scale(.93); }
   .bar { height: 6px; background: #EAECF5; border-radius: 6px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
   .section-title { font-weight: 900; font-size: 15px; color: #1A1A2E; margin-bottom: 14px; }
@@ -377,7 +380,7 @@ export default function Stokly() {
                 <span>🔴</span><span style={{ fontWeight:800, fontSize:13, color:C.red }}>{lowStock.length}</span>
               </button>
             )}
-            {tab==="inventory" && <button onClick={() => setModal("product")} className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Producto</button>}
+            {tab==="inventory" && <button onClick={() => setModal("addChoice")} className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Producto</button>}
             {tab==="sales"     && <button onClick={() => setModal("sale")}    className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Venta</button>}
             {tab==="expenses"  && <button onClick={() => setModal("expense")} className="btn-main btn-orange" style={{ padding:"9px 16px", fontSize:13 }}>+ Gasto</button>}
             {memberships.length > 1 && workspaceId && (
@@ -445,15 +448,45 @@ export default function Stokly() {
 
       {/* Mobile bottom nav */}
       <div className="bottom-nav">
-        {TABS.map(t => (
-          <button key={t.id} className={`tab-btn-mob ${tab===t.id?"active":""}`} onClick={() => setTab(t.id)}>
-            <span style={{ fontSize:20 }}>{t.emoji}</span>
-            <span style={{ fontSize:9, fontWeight:800, color:tab===t.id?C.green:C.muted }}>{t.label}</span>
-          </button>
+        {TABS.map((t, i) => (
+          <Fragment key={t.id}>
+            {i === Math.floor(TABS.length/2) && (
+              <button className="fab-add" onClick={() => setModal("quickAdd")} title="Agregar rápido">+</button>
+            )}
+            <button className={`tab-btn-mob ${tab===t.id?"active":""}`} onClick={() => setTab(t.id)}>
+              <span style={{ fontSize:20 }}>{t.emoji}</span>
+              <span style={{ fontSize:9, fontWeight:800, color:tab===t.id?C.green:C.muted }}>{t.label}</span>
+            </button>
+          </Fragment>
         ))}
       </div>
 
       {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
+      {modal==="addChoice" && (
+        <OptionPickerModal
+          title="➕ Agregar producto"
+          subtitle="Elige cómo quieres agregarlo"
+          onClose={() => setModal(null)}
+          options={[
+            { emoji:"✏️", title:"Agregar producto manual", desc:"Un producto a la vez, con foto y todos los datos", bg:C.greenLight, color:C.green, action:() => setModal("product") },
+            { emoji:"📂", title:"Forma masiva en Excel", desc:"Sube un archivo .xlsx o .csv con muchos productos", bg:C.blueLight, color:C.blue, action:() => { setImportView("file"); setModal("import"); } },
+            { emoji:"🔗", title:"Google Sheets", desc:"Pega el enlace de tu hoja de cálculo", bg:C.greenLight, color:C.green, action:() => { setImportView("sheet"); setModal("import"); } },
+          ]}
+        />
+      )}
+      {modal==="quickAdd" && (
+        <OptionPickerModal
+          title="➕ Agregar"
+          subtitle="¿Qué quieres registrar?"
+          onClose={() => setModal(null)}
+          options={[
+            { emoji:"✏️", title:"Producto manual", desc:"Un producto con foto y todos los datos", bg:C.greenLight, color:C.green, action:() => setModal("product") },
+            { emoji:"📂", title:"Producto masivo", desc:"Excel/CSV o Google Sheets (eliges dentro)", bg:C.blueLight, color:C.blue, action:() => { setImportView("file"); setModal("import"); } },
+            { emoji:"💰", title:"Agregar venta", desc:"Registrar una venta rápidamente", bg:C.greenLight, color:C.green, action:() => setModal("sale") },
+            { emoji:"💸", title:"Agregar gasto", desc:"Registrar un gasto rápidamente", bg:C.orangeLight, color:C.orange, action:() => setModal("expense") },
+          ]}
+        />
+      )}
       {modal==="import"  && <ImportModal    importView={importView} onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
@@ -505,7 +538,7 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
           <div className="grid-2">
             {[
               { label:"Registrar venta",  emoji:"💰", color:C.green,  bg:C.greenLight,  action:()=>setModal("sale") },
-              { label:"Agregar producto", emoji:"📦", color:C.blue,   bg:C.blueLight,   action:()=>setModal("product") },
+              { label:"Agregar producto", emoji:"📦", color:C.blue,   bg:C.blueLight,   action:()=>setModal("addChoice") },
               { label:"Registrar gasto",  emoji:"💸", color:C.orange, bg:C.orangeLight, action:()=>setModal("expense") },
               { label:"Ver finanzas",     emoji:"📈", color:C.teal,   bg:C.tealLight,   action:()=>setTab("finance") },
             ].map(a=>(
@@ -650,8 +683,6 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
             </>
           )}
         </div>
-        <button onClick={()=>{setImportView("file");setModal("import");}} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Excel / CSV</button>
-        <button onClick={()=>{setImportView("sheet");setModal("import");}} style={{ background:C.greenLight, color:C.green, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🔗 Google Sheets</button>
         {products.length>0 && (
           <button onClick={clearAll} title="Vaciar todo el inventario (borrado permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar</button>
         )}
@@ -1198,6 +1229,40 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
+// Modal genérico de opciones (atajos de agregar)
+function OptionPickerModal({ title, subtitle, options, onClose }) {
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>{title}</div>
+        {subtitle && <div style={{ fontSize:13, color:C.muted, fontWeight:700, marginBottom:18 }}>{subtitle}</div>}
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {options.map(o => (
+            <button
+              key={o.title}
+              onClick={o.action}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=o.color;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";}}
+              style={{ display:"flex", alignItems:"center", gap:14, background:C.bg, border:"2px solid transparent", borderRadius:16, padding:"15px 16px", cursor:"pointer", fontFamily:"inherit", textAlign:"left", width:"100%" }}
+            >
+              <div style={{ width:44, height:44, background:o.bg, borderRadius:13, display:"flex", alignItems:"center", justifyContent:"center", fontSize:21, flexShrink:0 }}>{o.emoji}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:900, fontSize:15, color:C.text }}>{o.title}</div>
+                <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{o.desc}</div>
+              </div>
+              <div style={{ fontSize:18, color:C.muted, fontWeight:900 }}>›</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop:18 }}>
+          <button className="btn-outline" onClick={onClose} style={{ width:"100%" }}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",category:"Ropa" });
   const [image, setImage] = useState("");
