@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen.jsx";
+import TeamModal from "./components/TeamModal.jsx";
 import {
   useAuth,
   useSyncedTable,
+  useMemberships,
+  acceptPendingInvites,
   productFromRow,
   productToRow,
   saleFromRow,
@@ -273,24 +276,41 @@ function Splash({ text }) {
 // ── App Shell ─────────────────────────────────────────────────────────────────
 export default function Stokly() {
   const { user, initializing, signOut } = useAuth();
+  const { memberships, status: mStatus, refresh: refreshMemberships } = useMemberships(user?.id);
   const [tab, setTab] = useState("home");
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [importView, setImportView] = useState("file"); // file | sheet
+  const [activeWs, setActiveWs] = useState(() => {
+    try { return localStorage.getItem("stokly_ws"); } catch { return null; }
+  });
   const width = useWindowWidth();
   const isMobile = width < 768;
 
-  // Tablas conectadas a Supabase (carga + guardado automático)
-  const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow }, user?.id);
-  const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow     }, user?.id);
-  const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow  }, user?.id);
+  // ── Panel activo (el propio o uno compartido por invitación) ──
+  const wsReady = !!user && (mStatus === "ready" || mStatus === "error");
+  const validActive = activeWs && memberships.some(m => m.workspace_id === activeWs);
+  const workspaceId = wsReady ? (validActive ? activeWs : user.id) : null;
+  const isOwner = !!workspaceId && memberships.some(m => m.workspace_id === workspaceId && m.role === "owner");
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    try { localStorage.setItem("stokly_ws", workspaceId); } catch { /* sin storage */ }
+  }, [workspaceId]);
+
+  // Tablas conectadas a Supabase (carga + guardado automático, por panel)
+  const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow }, user?.id, workspaceId);
+  const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow     }, user?.id, workspaceId);
+  const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow  }, user?.id, workspaceId);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
 
   // Primera vez: cargar datos de ejemplo para que el panel no arranque vacío
+  // (solo en el panel propio, nunca en uno compartido)
   const seedRef = useRef(false);
   useEffect(() => {
-    if (!user || pStatus !== "ready" || seedRef.current) return;
+    if (!user || !workspaceId || pStatus !== "ready" || seedRef.current) return;
+    if (workspaceId !== user.id) { seedRef.current = true; return; }
     if (products.length > 0) { seedRef.current = true; return; }
     seedRef.current = true;
     setProducts(INIT_PRODUCTS.map(p => ({ ...p, id: String(p.id) })));
@@ -298,7 +318,23 @@ export default function Stokly() {
     setExpenses(INIT_EXPENSES.map(e => ({ ...e, id: String(e.id) })));
     showToast("✨ Cargamos datos de ejemplo");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, pStatus, products.length]);
+  }, [user, workspaceId, pStatus, products.length]);
+
+  // Aceptar invitaciones pendientes dirigidas a este correo
+  const acceptedRef = useRef(false);
+  useEffect(() => {
+    if (!user || mStatus !== "ready" || acceptedRef.current) return;
+    acceptedRef.current = true;
+    acceptPendingInvites(user)
+      .then(async (joined) => {
+        if (!joined.length) return;
+        setActiveWs(joined[joined.length - 1]);
+        await refreshMemberships();
+        showToast("🤝 Te uniste a un panel compartido");
+      })
+      .catch((e) => console.error("[stokly] aceptar invitación:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, mStatus]);
 
   // Pantalla de carga / login
   if (initializing) return <Splash text="Cargando stokly…" />;
@@ -353,6 +389,28 @@ export default function Stokly() {
             {tab==="inventory" && <button onClick={() => setModal("product")} className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Producto</button>}
             {tab==="sales"     && <button onClick={() => setModal("sale")}    className="btn-main" style={{ padding:"9px 16px", fontSize:13 }}>+ Venta</button>}
             {tab==="expenses"  && <button onClick={() => setModal("expense")} className="btn-main btn-orange" style={{ padding:"9px 16px", fontSize:13 }}>+ Gasto</button>}
+            {memberships.length > 1 && workspaceId && (
+              <select
+                value={workspaceId}
+                onChange={e => setActiveWs(e.target.value)}
+                className="stk-input"
+                style={{ width:"auto", padding:"8px 10px", fontSize:12, fontWeight:800 }}
+                title="Cambiar de panel"
+              >
+                {memberships.map(m => (
+                  <option key={m.workspace_id} value={m.workspace_id}>
+                    {m.workspace_id === user.id ? "🏠 Mi panel" : "👥 Panel compartido"}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={() => setModal("team")}
+              title="Invitar a tu equipo"
+              style={{ background:C.purpleLight, border:"none", borderRadius:12, padding:"7px 11px", cursor:"pointer", fontWeight:800, fontSize:13, color:C.purple, fontFamily:"inherit" }}
+            >
+              👥{!isMobile && " Equipo"}
+            </button>
             <button onClick={() => signOut()} title="Cerrar sesión" style={{ background:C.bg, border:"none", borderRadius:12, padding:"7px 10px", cursor:"pointer", fontWeight:800, fontSize:12, color:C.muted, fontFamily:"inherit" }}>⏻</button>
             <div title={user.email} style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15 }}>{(user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}</div>
           </div>
@@ -383,6 +441,7 @@ export default function Stokly() {
       {modal==="import"  && <ImportModal    importView={importView} onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
+      {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

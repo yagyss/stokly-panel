@@ -33,6 +33,79 @@ export function useAuth() {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  PANELES (workspaces) · MIEMBROS · INVITACIONES
+// ══════════════════════════════════════════════════════════════
+// Paneles a los que pertenece el usuario (incluye el suyo propio)
+export function useMemberships(userId) {
+  const [memberships, setMemberships] = useState([]);
+  const [status, setStatus] = useState(userId ? "loading" : "idle");
+
+  const refresh = async () => {
+    if (!userId) {
+      setMemberships([]);
+      setStatus("idle");
+      return;
+    }
+    setStatus("loading");
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("workspace_id, role, email, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("[stokly] miembros:", error.message);
+      setStatus("error");
+      return;
+    }
+    setMemberships(data || []);
+    setStatus("ready");
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  return { memberships, status, refresh };
+}
+
+// Une al usuario a los paneles que le hayan invitado por su correo.
+// Devuelve la lista de workspace_id a los que se acababa de unir.
+export async function acceptPendingInvites(user) {
+  const email = (user?.email || "").trim().toLowerCase();
+  if (!email) return [];
+
+  const { data, error } = await supabase
+    .from("invitations")
+    .select("id, workspace_id, email")
+    .eq("status", "pending");
+  if (error) {
+    console.error("[stokly] invitaciones:", error.message);
+    return [];
+  }
+
+  const mine = (data || []).filter(
+    (i) => (i.email || "").trim().toLowerCase() === email
+  );
+  const joined = [];
+  for (const inv of mine) {
+    const { error: insErr } = await supabase.from("workspace_members").insert({
+      workspace_id: inv.workspace_id,
+      user_id: user.id,
+      email,
+      role: "member",
+    });
+    if (insErr) {
+      console.error("[stokly] unirse al panel:", insErr.message);
+      continue;
+    }
+    await supabase.from("invitations").update({ status: "accepted" }).eq("id", inv.id);
+    joined.push(inv.workspace_id);
+  }
+  return joined;
+}
+
+// ══════════════════════════════════════════════════════════════
 //  MAPEO fila de BD <-> objeto de la app
 // ══════════════════════════════════════════════════════════════
 export const productFromRow = (r) => ({
@@ -51,9 +124,10 @@ export const productFromRow = (r) => ({
   emoji: r.emoji || "📦",
 });
 
-export const productToRow = (p, uid) => ({
+export const productToRow = (p, uid, ws) => ({
   id: String(p.id),
   user_id: uid,
+  workspace_id: ws,
   name: p.name,
   sku: p.sku,
   brand: p.brand || "",
@@ -77,9 +151,10 @@ export const saleFromRow = (r) => ({
   method: r.method || "Efectivo",
 });
 
-export const saleToRow = (s, uid) => ({
+export const saleToRow = (s, uid, ws) => ({
   id: String(s.id),
   user_id: uid,
+  workspace_id: ws,
   product_id: s.productId == null ? null : String(s.productId),
   qty: Math.round(+s.qty) || 0,
   total: +s.total || 0,
@@ -96,9 +171,10 @@ export const expenseFromRow = (r) => ({
   emoji: r.emoji || "💡",
 });
 
-export const expenseToRow = (e, uid) => ({
+export const expenseToRow = (e, uid, ws) => ({
   id: String(e.id),
   user_id: uid,
+  workspace_id: ws,
   concept: e.concept,
   amount: +e.amount || 0,
   date: e.date,
@@ -108,30 +184,32 @@ export const expenseToRow = (e, uid) => ({
 
 // ══════════════════════════════════════════════════════════════
 //  TABLA SINCRONIZADA
-//  · carga al iniciar sesión
+//  · carga al iniciar sesión (filtrada por panel activo)
 //  · cada cambio local se calcula (altas / bajas / cambios)
 //    y se guarda en Supabase en segundo plano
 // ══════════════════════════════════════════════════════════════
-export function useSyncedTable(table, { fromRow, toRow }, userId) {
+export function useSyncedTable(table, { fromRow, toRow }, userId, workspaceId) {
   const [rows, setRows] = useState([]);
-  const [status, setStatus] = useState(userId ? "loading" : "idle");
+  const [status, setStatus] = useState(userId && workspaceId ? "loading" : "idle");
   const ref = useRef([]);
   const loadedFor = useRef(null);
+  const key = userId && workspaceId ? userId + ":" + workspaceId : null;
 
   useEffect(() => {
-    if (!userId) {
+    if (!key) {
       setStatus("idle");
       ref.current = [];
       setRows([]);
       loadedFor.current = null;
       return;
     }
-    if (loadedFor.current === userId) return;
+    if (loadedFor.current === key) return;
     let alive = true;
     setStatus("loading");
     supabase
       .from(table)
       .select("*")
+      .eq("workspace_id", workspaceId)
       .then(({ data, error }) => {
         if (!alive) return;
         if (error) {
@@ -140,7 +218,7 @@ export function useSyncedTable(table, { fromRow, toRow }, userId) {
           return;
         }
         const mapped = (data || []).map(fromRow);
-        loadedFor.current = userId;
+        loadedFor.current = key;
         ref.current = mapped;
         setRows(mapped);
         setStatus("ready");
@@ -148,7 +226,7 @@ export function useSyncedTable(table, { fromRow, toRow }, userId) {
     return () => {
       alive = false;
     };
-  }, [userId, table]);
+  }, [key, table]);
 
   async function persist(prev, next) {
     const prevMap = new Map(prev.map((r) => [String(r.id), r]));
@@ -159,7 +237,7 @@ export function useSyncedTable(table, { fromRow, toRow }, userId) {
       (r) => prevMap.has(String(r.id)) && prevMap.get(String(r.id)) !== r
     );
     try {
-      const up = [...inserted, ...updated].map((r) => toRow(r, userId));
+      const up = [...inserted, ...updated].map((r) => toRow(r, userId, workspaceId));
       if (up.length) {
         const { error } = await supabase.from(table).upsert(up);
         if (error) throw error;

@@ -303,7 +303,7 @@ export default function AuthScreen() {
         </div>
 
         <div style={{ marginTop: 18, fontSize: 11, color: "#B4B8CC", fontWeight: 600, textAlign: "center", lineHeight: 1.5 }}>
-          Cada usuario ve únicamente sus propios productos, ventas y gastos.
+          Cada cuenta tiene su propio panel. Invita a tu equipo para trabajar juntos en el mismo panel.
         </div>
       </form>
     </div>
