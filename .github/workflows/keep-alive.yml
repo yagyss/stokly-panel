@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════════════
+#  MANTENER SUPABASE ACTIVO (evita la pausa por inactividad)
+#  El plan gratis pausa el proyecto si pasan 7 días sin actividad.
+#  Este trabajo consulta Supabase TODOS LOS DÍAS para que nunca
+#  llegue a esos 7 días. Si algún día falla, GitHub te avisa por
+#  correo (el trabajo queda en rojo).
+# ══════════════════════════════════════════════════════════════
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # todos los días a las 6:17 UTC (1:17 a.m. en Colombia)
+  workflow_dispatch: {}     # permite probarlo a mano
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar Supabase (actividad diaria)
+        run: |
+          REF="rquddcbkaovqplcobifd"
+          KEY="sb_publishable_5K0PvBiJYNhBtBGDO3wVSg_Xn1nm8ll"
+          BASE="https://${REF}.supabase.co/rest/v1"
+
+          C1=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: ${KEY}" "${BASE}/products?select=id&limit=1")
+          echo "Tabla products: HTTP ${C1}"
+
+          C2=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: ${KEY}" "${BASE}/sales?select=id&limit=1")
+          echo "Tabla sales: HTTP ${C2}"
+
+          if [ "${C1}" != "200" ] || [ "${C2}" != "200" ]; then
+            echo "::error::Supabase no responde bien. Revisa si el proyecto esta pausado (Supabase Dashboard) o si cambio la llave publica."
+            exit 1
+          fi
+          echo "OK - proyecto activo, datos intactos"
