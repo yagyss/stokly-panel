@@ -281,6 +281,7 @@ export default function Stokly() {
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [importView, setImportView] = useState("file"); // file | sheet
+  const [userMenu, setUserMenu] = useState(false); // menú del usuario en el topbar
   const [activeWs, setActiveWs] = useState(() => {
     try { return localStorage.getItem("stokly_ws"); } catch { return null; }
   });
@@ -411,8 +412,33 @@ export default function Stokly() {
             >
               👥{!isMobile && " Equipo"}
             </button>
-            <button onClick={() => signOut()} title="Cerrar sesión" style={{ background:C.bg, border:"none", borderRadius:12, padding:"7px 10px", cursor:"pointer", fontWeight:800, fontSize:12, color:C.muted, fontFamily:"inherit" }}>⏻</button>
-            <div title={user.email} style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15 }}>{(user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}</div>
+            <div style={{ position:"relative" }}>
+              <button
+                onClick={() => setUserMenu(v => !v)}
+                title={user.email}
+                aria-label="Menú de usuario"
+                style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15, border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, boxShadow:userMenu ? "0 0 0 3px rgba(0,200,150,.35)" : "none" }}
+              >
+                {(user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}
+              </button>
+              {userMenu && (
+                <>
+                  <div onClick={() => setUserMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
+                  <div style={{ position:"absolute", top:44, right:0, background:"white", borderRadius:16, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", width:240, zIndex:80, overflow:"hidden", fontFamily:"inherit", textAlign:"left" }}>
+                    <div style={{ padding:"14px 16px 12px", borderBottom:"1.5px solid #EAECF5", background:"#F7F8FC" }}>
+                      {user.user_metadata?.display_name && <div style={{ fontWeight:900, fontSize:14, color:"#1A1A2E" }}>{user.user_metadata.display_name}</div>}
+                      <div style={{ fontSize:12, color:"#8B8FA8", fontWeight:700, wordBreak:"break-all", lineHeight:1.35 }}>{user.email}</div>
+                    </div>
+                    <button
+                      onClick={() => { setUserMenu(false); if (window.confirm("¿Cerrar sesión?")) signOut(); }}
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.red, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                    >
+                      ⏻ Cerrar sesión
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
