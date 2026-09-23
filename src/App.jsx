@@ -160,7 +160,7 @@ const STYLES = `
   .row-item:last-child { border-bottom: none; }
   .filter-btn { border: 2px solid #EAECF5; background: white; border-radius: 12px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: #8B8FA8; white-space: nowrap; }
   .filter-btn.active { border-color: #00C896; color: #00C896; background: #E6FAF5; }
-  .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; }
+  .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 3px; border-radius: 12px; min-width: 0; }
   .tab-btn-mob.active { background: #E6FAF5; }
   .bar { height: 6px; background: #EAECF5; border-radius: 6px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
@@ -435,6 +435,10 @@ export default function Stokly() {
             <span style={{ fontSize:9, fontWeight:800, color:tab===t.id?C.green:C.muted }}>{t.label}</span>
           </button>
         ))}
+        <button className="tab-btn-mob" onClick={() => { if (window.confirm("¿Cerrar sesión?")) signOut(); }} title="Cerrar sesión" style={{ borderLeft:`1.5px solid ${C.border||"#EAECF5"}`, marginLeft:4, paddingLeft:8 }}>
+          <span style={{ fontSize:20 }}>⏻</span>
+          <span style={{ fontSize:9, fontWeight:800, color:C.red }}>Salir</span>
+        </button>
       </div>
 
       {modal==="product" && <AddProductModal onClose={() => setModal(null)} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
