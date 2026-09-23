@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { uploadProductImage } from "./lib/image.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
 import {
@@ -80,7 +81,8 @@ function groupProducts(products) {
   const g = {};
   for (const p of products) {
     const k = `${p.name}__${p.brand}`;
-    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, price:p.price, cost:p.cost, variants:[] };
+    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, price:p.price, cost:p.cost, image:p.image||"", variants:[] };
+    if (!g[k].image && p.image) g[k].image = p.image;
     g[k].variants.push(p);
   }
   return Object.values(g);
@@ -160,7 +162,7 @@ const STYLES = `
   .row-item:last-child { border-bottom: none; }
   .filter-btn { border: 2px solid #EAECF5; background: white; border-radius: 12px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: #8B8FA8; white-space: nowrap; }
   .filter-btn.active { border-color: #00C896; color: #00C896; background: #E6FAF5; }
-  .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 3px; border-radius: 12px; min-width: 0; }
+  .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; }
   .tab-btn-mob.active { background: #E6FAF5; }
   .bar { height: 6px; background: #EAECF5; border-radius: 6px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
@@ -445,7 +447,7 @@ export default function Stokly() {
         {/* Page content */}
         <div className="page-content">
           {tab==="home"      && <Home      products={products} sales={sales} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
-          {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} />}
+          {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} workspaceId={workspaceId} />}
           {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
@@ -461,13 +463,9 @@ export default function Stokly() {
             <span style={{ fontSize:9, fontWeight:800, color:tab===t.id?C.green:C.muted }}>{t.label}</span>
           </button>
         ))}
-        <button className="tab-btn-mob" onClick={() => { if (window.confirm("¿Cerrar sesión?")) signOut(); }} title="Cerrar sesión" style={{ borderLeft:`1.5px solid ${C.border||"#EAECF5"}`, marginLeft:4, paddingLeft:8 }}>
-          <span style={{ fontSize:20 }}>⏻</span>
-          <span style={{ fontSize:9, fontWeight:800, color:C.red }}>Salir</span>
-        </button>
       </div>
 
-      {modal==="product" && <AddProductModal onClose={() => setModal(null)} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
+      {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
       {modal==="import"  && <ImportModal    importView={importView} onClose={() => setModal(null)} onImport={(newP,mode) => { if(mode==="replace") setProducts(newP); else setProducts(prev => { const s=new Set(prev.map(p=>p.sku)); return [...prev,...newP.filter(p=>!s.has(p.sku))]; }); setModal(null); showToast(`✅ ${newP.length} importados`); }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
@@ -575,11 +573,50 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
 }
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
-function Inventory({ products, setProducts, lowStock, showToast, setModal, setImportView, isMobile }) {
+function Inventory({ products, setProducts, lowStock, showToast, setModal, setImportView, isMobile, workspaceId }) {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState("visual");
   const [filterCat, setFilterCat] = useState("Todos");
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const [photoTarget, setPhotoTarget] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  // Sube la foto de una referencia (carpeta = panel de trabajo)
+  async function handlePhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file || !photoTarget) return;
+    setUploading(true);
+    try {
+      const url = await uploadProductImage(file, workspaceId);
+      const ids = new Set(photoTarget.variants.map(v => String(v.id)));
+      setProducts(prev => prev.map(x => ids.has(String(x.id)) ? { ...x, image: url } : x));
+      showToast("📷 Foto de referencia actualizada");
+    } catch (err) {
+      console.error("[stokly] foto:", err && err.message);
+      showToast("❌ No se pudo subir la foto");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Borrado permanente de una referencia (todas sus variantes)
+  const deleteGroup = (group) => {
+    if (!window.confirm(`¿Eliminar la referencia "${group.name}" y sus ${group.variants.length} variantes?\n\nSe borrará PERMANENTEMENTE.`)) return;
+    const ids = new Set(group.variants.map(v => String(v.id)));
+    setProducts(prev => prev.filter(p => !ids.has(String(p.id))));
+    setExpandedGroup(null);
+    showToast("🗑️ Referencia eliminada");
+  };
+
+  // Vaciar todo el inventario (borrado permanente)
+  const clearAll = () => {
+    if (!window.confirm(`🗑️ ¿Vaciar el inventario?\n\nSe eliminarán PERMANENTEMENTE los ${products.length} productos.\n(Las ventas y gastos NO se tocan)`)) return;
+    if (!window.confirm("⚠️ Última confirmación: esta acción NO se puede deshacer.\n\n¿Borrar todo el inventario?")) return;
+    setProducts([]);
+    showToast("🗑️ Inventario vaciado — empieza desde cero 🚀");
+  };
   const categories = ["Todos", ...new Set(products.map(p=>p.category))];
   const q = search.toLowerCase();
   const filtered = products.filter(p =>
@@ -590,6 +627,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{ display:"none" }} />
       {/* Search + controls */}
       <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
         <div style={{ position:"relative", flex:"1 1 240px" }}>
@@ -602,6 +640,9 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
         </div>
         <button onClick={()=>{setImportView("file");setModal("import");}} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Excel / CSV</button>
         <button onClick={()=>{setImportView("sheet");setModal("import");}} style={{ background:C.greenLight, color:C.green, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🔗 Google Sheets</button>
+        {products.length>0 && (
+          <button onClick={clearAll} title="Vaciar todo el inventario (borrado permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar</button>
+        )}
       </div>
 
       {/* Category filters */}
@@ -638,7 +679,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <div style={{ width:42,height:42, background:hasAlert?C.redLight:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center", fontSize:22 }}>{group.emoji}</div>
+                      <div style={{ width:42,height:42, background:hasAlert?C.redLight:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center", fontSize:22, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={group.image} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
                       <div>
                         <div style={{ fontWeight:900, fontSize:16, color:C.text }}>{group.name}</div>
                         <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{group.brand} · {group.variants.length} variantes</div>
@@ -659,7 +700,18 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                     ))}
                     <span style={{ fontSize:11, color:C.muted, fontWeight:700 }}>· {totalStock} uds</span>
                     {hasAlert && <span style={{ fontSize:11, fontWeight:900, color:C.red }}>⚠️</span>}
-                    <span style={{ marginLeft:"auto", fontSize:14, color:C.muted }}>{isExpanded?"▲":"▼"}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setPhotoTarget(group); if (fileRef.current) fileRef.current.click(); }}
+                      title={group.image ? "Cambiar foto" : "Agregar foto"}
+                      disabled={uploading}
+                      style={{ marginLeft:"auto", background:C.bg, border:"none", borderRadius:10, padding:"5px 9px", fontSize:14, cursor:"pointer", lineHeight:1 }}
+                    >{uploading ? "⏳" : "📷"}</button>
+                    <span style={{ fontSize:14, color:C.muted }}>{isExpanded?"▲":"▼"}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteGroup(group); }}
+                      title="Eliminar referencia (permanente)"
+                      style={{ background:"none", border:"none", cursor:"pointer", fontSize:14, padding:0, lineHeight:1, fontFamily:"inherit" }}
+                    >🗑️</button>
                   </div>
                 </div>
 
@@ -700,7 +752,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                         );
                       })}
                       <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
-                        <button onClick={()=>{setProducts(prev=>prev.filter(p=>!group.variants.find(v=>v.id===p.id)));showToast("🗑️ Eliminado");}} style={{ background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontWeight:700,fontFamily:"inherit" }}>Eliminar referencia</button>
+                        <button onClick={()=>deleteGroup(group)} style={{ background:"none",border:"none",color:C.red,fontSize:12,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Eliminar referencia (permanente)</button>
                       </div>
                     </div>
                   </div>
@@ -720,7 +772,9 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
             return (
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                  <div className="color-dot" style={{ width:22,height:22, background:getColorCSS(p.color), flexShrink:0 }} />
+                  {p.image
+                    ? <img src={p.image} alt="" style={{ width:34, height:34, borderRadius:10, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
+                    : <div className="color-dot" style={{ width:22,height:22, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
                     <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.brand} · {p.color} · T{p.size} · {p.sku}</div>
@@ -738,7 +792,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   <div style={{ display:"flex", gap:6 }}>
                     <button className="stock-btn" onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock-1)}:x))}>−</button>
                     <button className="stock-btn" onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:x.stock+1}:x))}>+</button>
-                    <button onClick={()=>{setProducts(prev=>prev.filter(x=>x.id!==p.id));showToast("🗑️");}} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>✕</button>
+                    <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar "${p.name}" (${p.color} · T${p.size})?\n\nSe borrará PERMANENTEMENTE.`)) return; setProducts(prev=>prev.filter(x=>x.id!==p.id)); showToast("🗑️ Eliminado"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
                   </div>
                 </div>
               </div>
@@ -1058,11 +1112,25 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
-function AddProductModal({ onClose, onSave }) {
+function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",category:"Ropa" });
+  const [image, setImage] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const photoRef = useRef(null);
+
+  async function pickPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try { setImage(await uploadProductImage(file, workspaceId)); }
+    catch (err) { console.error("[stokly] foto:", err && err.message); if (showToast) showToast("❌ No se pudo subir la foto"); }
+    finally { setUploading(false); }
+  }
+
   function save() {
-    if (!f.name||!f.sku||!f.stock) return;
-    onSave({ ...f, id:newId(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦" });
+    if (!f.name||!f.sku||!f.stock || uploading) return;
+    onSave({ ...f, id:newId(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦", image });
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -1083,9 +1151,24 @@ function AddProductModal({ onClose, onSave }) {
             </select>
           </div>
         </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Foto del producto (opcional)</div>
+          <input ref={photoRef} type="file" accept="image/*" onChange={pickPhoto} style={{ display:"none" }} />
+          <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+            {image ? (
+              <>
+                <img src={image} alt="Vista previa" style={{ width:56, height:56, borderRadius:14, objectFit:"cover", border:"2px solid #EAECF5" }} />
+                <button className="filter-btn" onClick={()=>photoRef.current&&photoRef.current.click()} disabled={uploading}>{uploading ? "⏳ Subiendo…" : "🔄 Cambiar"}</button>
+                <button className="filter-btn" onClick={()=>setImage("")}>✕ Quitar</button>
+              </>
+            ) : (
+              <button className="filter-btn" onClick={()=>photoRef.current&&photoRef.current.click()} disabled={uploading}>{uploading ? "⏳ Subiendo…" : "📷 Agregar foto"}</button>
+            )}
+          </div>
+        </div>
         <div style={{ display:"flex",gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
-          <button className="btn-main" onClick={save} style={{ flex:2 }}>Guardar producto</button>
+          <button className="btn-main" onClick={save} disabled={uploading} style={{ flex:2, opacity:uploading?0.6:1 }}>Guardar producto</button>
         </div>
       </div>
     </div>

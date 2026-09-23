@@ -122,6 +122,7 @@ export const productFromRow = (r) => ({
   cost: Number(r.cost) || 0,
   sold: Number(r.sold) || 0,
   emoji: r.emoji || "📦",
+  image: r.image_url || "",
 });
 
 export const productToRow = (p, uid, ws) => ({
@@ -140,6 +141,7 @@ export const productToRow = (p, uid, ws) => ({
   cost: +p.cost || 0,
   sold: Math.round(+p.sold) || 0,
   emoji: p.emoji || "📦",
+  image_url: p.image || null,
 });
 
 export const saleFromRow = (r) => ({
@@ -243,11 +245,15 @@ export function useSyncedTable(table, { fromRow, toRow }, userId, workspaceId) {
         if (error) throw error;
       }
       if (removed.length) {
-        const { error } = await supabase
-          .from(table)
-          .delete()
-          .in("id", removed.map((r) => String(r.id)));
-        if (error) throw error;
+        // Borrado permanente en lotes de 100 (evita URLs demasiado largas)
+        const ids = removed.map((r) => String(r.id));
+        for (let i = 0; i < ids.length; i += 100) {
+          const { error } = await supabase
+            .from(table)
+            .delete()
+            .in("id", ids.slice(i, i + 100));
+          if (error) throw error;
+        }
       }
     } catch (err) {
       console.error("[stokly] sync " + table + ":", err.message || err);
