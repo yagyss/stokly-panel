@@ -328,7 +328,7 @@ export default function AuthScreen() {
       setBusy(false);
       setMsg({
         type: "error",
-        text: "Google aún no está conectado. Actívalo en: Supabase → Authentication → Providers → Google",
+        text: "No se pudo iniciar conexión con Google. Revisa tu internet e inténtalo de nuevo.",
       });
     }
   }
