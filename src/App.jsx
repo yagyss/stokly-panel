@@ -924,6 +924,12 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
   const topSold = [...products].sort((a,b)=>b.sold-a.sold);
   const byBrand = products.reduce((acc,p)=>{if(!acc[p.brand])acc[p.brand]=0;acc[p.brand]+=p.sold;return acc;},{});
   const byColor = products.reduce((acc,p)=>{if(!acc[p.color])acc[p.color]=0;acc[p.color]+=p.sold;return acc;},{});
+  // unidades vendidas por talla
+  const sizeMap = {};
+  products.forEach(p => { const s = String(p.size ?? "").trim(); if (!s) return; sizeMap[s] = (sizeMap[s] || 0) + (Number(p.sold) || 0); });
+  const bySize = Object.entries(sizeMap).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const maxSize = bySize[0]?.[1] || 1;
+  const totalSizeSold = bySize.reduce((a, [, v]) => a + v, 0);
   const maxSold = topSold[0]?.sold||1;
   const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>b.sold-a.sold);
   const margin = totalSales?pct(profit,totalSales):0;
@@ -967,6 +973,34 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
                   <span style={{ fontWeight:900,color:C.purple }}>{sold} uds</span>
                 </div>
                 <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(...Object.values(byColor)))*100)}%`, background:"linear-gradient(90deg,#F472B6,#8B5CF6)" }} /></div>
+              </div>
+            ))}
+          </div>
+          <div className="card" style={{ padding:20, marginBottom:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div className="section-title" style={{ marginBottom:0 }}>📏 Tallas más vendidas</div>
+              {bySize.length > 0 && <span className="pill" style={{ background:C.tealLight, color:C.teal }}>{totalSizeSold} uds</span>}
+            </div>
+            {bySize.length === 0 && (
+              <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7, marginTop:6 }}>
+                Aún no hay ventas por talla.<br />
+                <span style={{ fontWeight:600 }}>Registra ventas y verás aquí qué tallas se van primero.</span>
+              </div>
+            )}
+            {bySize.map(([size, sold], i) => (
+              <div key={size} style={{ marginBottom:12, marginTop: i === 0 && bySize.length > 0 ? 14 : 0 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5, alignItems:"center" }}>
+                  <div style={{ display:"flex", gap:8, alignItems:"center", minWidth:0 }}>
+                    <span style={{ height:26, padding:"0 10px", borderRadius:9, whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:12.5, background:i===0?"linear-gradient(135deg,#00C896,#4A90FF)":C.bg, border:i===0?"none":"2px solid "+C.border, color:i===0?"#fff":C.text, boxShadow:i===0?"0 4px 12px rgba(0,200,150,.30)":"none" }}>
+                      T {size}
+                    </span>
+                    <span style={{ fontWeight:800, fontSize:13, color:i===0?C.green:C.muted }}>
+                      {i===0 ? "🏆 La más vendida" : `${pct(sold, totalSizeSold)}% de lo vendido`}
+                    </span>
+                  </div>
+                  <span style={{ fontWeight:900, fontSize:13, color:i===0?C.green:C.purple }}>{sold} uds</span>
+                </div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#4A90FF,#8B5CF6)" }} /></div>
               </div>
             ))}
           </div>
