@@ -178,22 +178,63 @@ function solapaRango(e, rango) {
   return true;
 }
 function DateRangeFilter({ rango, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  // Cierra el menú al tocar fuera de él
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const etiqueta = rango.id === "custom" ? `${dmISO(rango.from||"")} → ${dmISO(rango.to||"")}` : rangoLabel(rango);
   return (
-    <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4, alignItems:"center" }}>
-      {RANGOS.map(r => (
-        <button
-          key={r.id}
-          className={`filter-btn ${rango.id === r.id ? "active" : ""}`}
-          style={{ whiteSpace:"nowrap", flexShrink:0 }}
-          onClick={() => onChange(r.id === "custom" ? { id:"custom", from: rango.from || restarDiasISO(29), to: rango.to || hoyISO() } : { id:r.id })}
-        >{r.label}</button>
-      ))}
-      {rango.id === "custom" && (
-        <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
-          <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12, width:140 }} value={rango.from || ""} onChange={e => onChange({ ...rango, from:e.target.value })} />
-          <span style={{ fontWeight:900, color:C.muted }}>→</span>
-          <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12, width:140 }} value={rango.to || ""} onChange={e => onChange({ ...rango, to:e.target.value })} />
-        </div>
+    <div ref={ref} style={{ position:"relative", alignSelf:"flex-start" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        style={{ display:"flex", alignItems:"center", gap:8, background:"#fff", border:`2px solid ${open ? C.blue : C.border}`, borderRadius:14, padding:"9px 14px", fontWeight:900, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", color:C.text, boxShadow: open ? "0 8px 20px rgba(16,24,40,0.10)" : "none" }}
+      >
+        <span>📅</span>
+        <span>{etiqueta}</span>
+        <span style={{ fontSize:10, color:C.muted, transform: open ? "rotate(180deg)" : "none", transition:"transform .15s" }}>▼</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position:"fixed", inset:0, zIndex:998 }} />
+          <div style={{ position:"absolute", top:"calc(100% + 6px)", left:0, zIndex:999, background:"#fff", border:`1.5px solid ${C.border}`, borderRadius:16, boxShadow:"0 16px 40px rgba(16,24,40,0.18)", padding:8, width:270, maxWidth:"calc(100vw - 32px)" }}>
+            <div style={{ fontSize:10.5, fontWeight:900, color:C.muted, textTransform:"uppercase", padding:"4px 8px 6px" }}>Elegir rango de tiempo</div>
+            {RANGOS.map(r => (
+              <button
+                key={r.id}
+                onClick={() => {
+                  onChange(r.id === "custom" ? { id:"custom", from: rango.from || restarDiasISO(29), to: rango.to || hoyISO() } : { id:r.id });
+                  if (r.id !== "custom") setOpen(false);
+                }}
+                style={{ display:"flex", width:"100%", justifyContent:"space-between", alignItems:"center", background:rango.id === r.id ? C.blueLight : "transparent", border:"none", borderRadius:10, padding:"10px 10px", fontWeight:800, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", color:C.text, textAlign:"left" }}
+              >
+                <span>{r.label}</span>
+                {rango.id === r.id && <span style={{ color:C.blue, fontWeight:900 }}>✓</span>}
+              </button>
+            ))}
+            {rango.id === "custom" && (
+              <div style={{ borderTop:`1px dashed ${C.border}`, marginTop:6, paddingTop:8, display:"flex", flexDirection:"column", gap:6 }}>
+                <div style={{ display:"flex", gap:6 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", marginBottom:3 }}>Desde</div>
+                    <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12.5, width:"100%" }} value={rango.from || ""} onChange={e => onChange({ ...rango, from:e.target.value })} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", marginBottom:3 }}>Hasta</div>
+                    <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12.5, width:"100%" }} value={rango.to || ""} onChange={e => onChange({ ...rango, to:e.target.value })} />
+                  </div>
+                </div>
+                <div style={{ fontSize:11, color:C.muted, fontWeight:700 }}>Los totales se actualizan al instante</div>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
