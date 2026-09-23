@@ -108,7 +108,8 @@ function useWindowWidth() {
 const parseCSV = (text) => {
   const lines = text.trim().split("\n").map(l=>l.replace(/\r/g,""));
   if (lines.length < 2) return [];
-  const delim = lines[0].includes("\t") ? "\t" : ",";
+  // Detecta el separador: tab, punto y coma (Excel español) o coma
+  const delim = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
   // Divide una línea respetando campos entre comillas (permite comas dentro de valores)
   const splitLine = (line) => { const out=[]; let cur=""; let q=false;
     for (let i=0;i<line.length;i++){ const ch=line[i];
@@ -1556,13 +1557,44 @@ function ImportModal({ onClose, onImport, importView="file" }) {
   const [src,setSrc]=useState(importView==="sheet"?"sheet":"file"); // "file" | "sheet"
   const [sheetUrl,setSheetUrl]=useState(""); const [loadingSheet,setLoadingSheet]=useState(false);
   const fileRef=useRef();
+  const xlsxOcupado=useRef(false);
+  const PLANTILLA_HEADERS = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (url de la foto)"];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","https://placehold.co/400x400"];
 
-  // Descarga la plantilla oficial: headers exactos +1 producto de ejemplo + columna de imagen
-  function descargarPlantilla() {
+  // Carga la librería XLSX solo si hace falta (compartida por importar y plantilla)
+  function cargarXLSX(msgCarga, msgFallo, cb) {
+    if (window.XLSX) { cb(); return; }
+    if (xlsxOcupado.current) return;
+    xlsxOcupado.current = true;
+    setError(msgCarga);
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = () => { xlsxOcupado.current = false; setError(""); cb(); };
+    s.onerror = () => { xlsxOcupado.current = false; setError(msgFallo); };
+    document.head.appendChild(s);
+  }
+
+  //1) Plantilla REAL de Excel (.xlsx) — columnas garantizadas en cualquier idioma de Excel
+  function descargarExcel() {
+    cargarXLSX(
+      "⏳ Preparando plantilla de Excel…",
+      "No se pudo cargar el generador de Excel. Revisa tu conexión o usa la plantilla CSV de abajo.",
+      () => {
+        try {
+          const ws = XLSX.utils.aoa_to_sheet([PLANTILLA_HEADERS, PLANTILLA_EJEMPLO]);
+          ws["!cols"] = PLANTILLA_HEADERS.map((h, i) => ({ wch: Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 2 }));
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+          XLSX.writeFile(wb, "plantilla-inventario-stokly.xlsx");
+        } catch (e) { setError("No se pudo generar la plantilla: " + e.message); }
+      }
+    );
+  }
+
+  //2) Plantilla CSV con ";" (Excel español + Google Sheets la reconocen con columnas)
+  function descargarCSV() {
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    const headers = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (url de la foto)"];
-    const ejemplo = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","https://placehold.co/400x400"];
-    const csv = "\uFEFF" + headers.map(esc).join(",") + "\n" + ejemplo.map(esc).join(",") + "\n";
+    const csv = "\uFEFF" + [PLANTILLA_HEADERS, PLANTILLA_EJEMPLO].map(r => r.map(esc).join(";")).join("\n") + "\n";
     const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -1574,18 +1606,11 @@ function ImportModal({ onClose, onImport, importView="file" }) {
   function processFile(file) {
     if(!file)return; setFileName(file.name); setError("");
     if(file.name.match(/\.xlsx?$/i)) {
-      const run=()=>{const r=new FileReader();
-        r.onload=e=>{try{const X=window.XLSX;if(!X){setError("El lector de Excel no cargó. Revisa tu conexión y vuelve a elegir el archivo.");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa los encabezados.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
-        r.readAsArrayBuffer(file);};
-      if(window.XLSX){run();}
-      else{
-        setError("⏳ Cargando lector de Excel…");
-        const s=document.createElement("script");
-        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-        s.onload=()=>{setError("");run();};
-        s.onerror=()=>setError("No se pudo cargar el lector de Excel. Revisa tu conexión e inténtalo otra vez.");
-        document.head.appendChild(s);
-      }
+      cargarXLSX("⏳ Cargando lector de Excel…", "No se pudo cargar el lector de Excel. Revisa tu conexión e inténtalo otra vez.", () => {
+        const r=new FileReader();
+        r.onload=e=>{try{const X=window.XLSX;if(!X){setError("El lector de Excel no cargó. Vuelve a intentarlo.");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa los encabezados.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
+        r.readAsArrayBuffer(file);
+      });
     } else if(file.name.match(/\.(csv|tsv|txt)$/i)) {
       const r=new FileReader(); r.onload=e=>{const p=parseCSV(e.target.result);if(!p.length){setError("Sin productos.");return;}setParsed(p);setStep("preview");};r.readAsText(file,"UTF-8");
     } else setError("Usa .xlsx o .csv");
@@ -1642,10 +1667,11 @@ function ImportModal({ onClose, onImport, importView="file" }) {
           {/* Plantilla oficial descargable */}
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
-              📄 <b>Plantilla oficial</b> — trae todos los campos listos, <b>un producto de ejemplo</b> y la columna <b>imagen (url de la foto)</b>. Sirve para <b>Excel, CSV y Google Sheets</b>.<br/>
+              📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen (url de la foto)</b>.<br/>
               <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · la imagen debe ser un enlace público (https://…)</span>
             </div>
-            <button className="btn-outline" onClick={descargarPlantilla} style={{ width:"100%", fontWeight:900 }}>📥 Descargar plantilla (CSV)</button>
+            <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
+            <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
           </div>
 
           {src==="file" && (
