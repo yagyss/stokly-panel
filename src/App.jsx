@@ -177,8 +177,8 @@ const STYLES = `
   .handle { width: 40px; height: 4px; background: #EAECF5; border-radius: 2px; margin: 0 auto 24px; }
   .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #1A1A2E; color: white; border-radius: 16px; padding: 13px 22px; font-weight: 700; font-size: 14px; z-index: 200; white-space: nowrap; animation: popIn 0.3s ease; }
   @keyframes popIn { from { transform: translateX(-50%) translateY(10px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }
-  .view-toggle { display: flex; background: #F7F8FC; border-radius: 12px; padding: 4px; gap: 2px; }
-  .view-btn { border: none; background: none; border-radius: 9px; padding: 6px 13px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; color: #8B8FA8; }
+  .view-toggle { display: flex; background: #F7F8FC; border-radius: 12px; padding: 4px; gap: 2px; flex-shrink: 0; }
+  .view-btn { border: none; background: none; border-radius: 9px; padding: 6px 13px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; color: #8B8FA8; white-space: nowrap; }
   .view-btn.active { background: white; color: #1A1A2E; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
   .group-card { background: white; border-radius: 22px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); overflow: hidden; border: 2px solid transparent; }
   .group-card.has-alert { border-color: rgba(255,90,95,0.25); }
@@ -625,6 +625,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
         <div className="view-toggle">
           <button className={`view-btn ${viewMode==="visual"?"active":""}`} onClick={()=>setViewMode("visual")}>📋 Visual</button>
           <button className={`view-btn ${viewMode==="list"?"active":""}`} onClick={()=>setViewMode("list")}>☰ Lista</button>
+          <button className={`view-btn ${viewMode==="table"?"active":""}`} onClick={()=>setViewMode("table")}>🗒️ Tabla</button>
         </div>
         <button onClick={()=>{setImportView("file");setModal("import");}} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>📂 Excel / CSV</button>
         <button onClick={()=>{setImportView("sheet");setModal("import");}} style={{ background:C.greenLight, color:C.green, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🔗 Google Sheets</button>
@@ -787,6 +788,55 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
             );
           })}
           {filtered.length===0 && <div style={{ textAlign:"center",padding:40,color:C.muted,fontWeight:700 }}>Sin resultados 🔍</div>}
+        </div>
+      )}
+
+      {/* TABLE MODE — vista tradicional con todos los campos */}
+      {viewMode==="table" && (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ borderCollapse:"collapse", width:"100%", minWidth:1020, fontSize:13 }}>
+              <thead>
+                <tr style={{ background:C.bg }}>
+                  {["","Nombre","SKU","Marca","Color","Talla","Categoría","Precio","Costo","Margen","Mín","Stock","Vendidos",""].map((h,i)=>(
+                    <th key={i} style={{ padding:"11px 10px", fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", textAlign: (i>=7&&i<=12)?"right":"left", whiteSpace:"nowrap", borderBottom:"1.5px solid "+C.border }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(p=>{
+                  const st = stockStatus(p.stock,p.minStock);
+                  const margin = p.price?Math.round(((p.price-p.cost)/p.price)*100):0;
+                  const td = { padding:"9px 10px", borderBottom:"1px solid "+C.border+"60", whiteSpace:"nowrap" };
+                  return (
+                    <tr key={p.id}>
+                      <td style={td}>{p.image ? <img src={p.image} alt="" style={{ width:30, height:30, borderRadius:8, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:17 }}>{p.emoji}</span>}</td>
+                      <td style={{ ...td, fontWeight:800 }}>{p.name}</td>
+                      <td style={{ ...td, color:C.muted, fontWeight:600 }}>{p.sku}</td>
+                      <td style={td}>{p.brand||"—"}</td>
+                      <td style={td}>{p.color||"—"}</td>
+                      <td style={td}>{p.size?`T${p.size}`:"—"}</td>
+                      <td style={td}>{p.category}</td>
+                      <td style={{ ...td, textAlign:"right", fontWeight:800 }}>{fmt(p.price)}</td>
+                      <td style={{ ...td, textAlign:"right", color:C.muted }}>{fmt(p.cost)}</td>
+                      <td style={{ ...td, textAlign:"right" }}><span className="pill" style={{ background:margin>40?C.greenLight:margin>20?C.yellowLight:C.redLight, color:margin>40?C.green:margin>20?C.yellow:C.red }}>{margin}%</span></td>
+                      <td style={{ ...td, textAlign:"right", color:C.muted }}>{p.minStock}</td>
+                      <td style={{ ...td, textAlign:"right", fontWeight:900, color:st.color }}>{p.stock} {st.dot}</td>
+                      <td style={{ ...td, textAlign:"right", color:C.muted, fontWeight:700 }}>{p.sold}</td>
+                      <td style={td}>
+                        <div style={{ display:"flex", gap:4 }}>
+                          <button className="stock-btn" style={{ width:26, height:26, fontSize:13 }} onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock-1)}:x))}>−</button>
+                          <button className="stock-btn" style={{ width:26, height:26, fontSize:13 }} onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:x.stock+1}:x))}>+</button>
+                          <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar "${p.name}" (${p.color} · T${p.size})?\n\nSe borrará PERMANENTEMENTE.`)) return; setProducts(prev=>prev.filter(x=>x.id!==p.id)); showToast("🗑️ Eliminado"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"3px 7px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length===0 && <tr><td colSpan={14} style={{ textAlign:"center", padding:40, color:C.muted, fontWeight:700 }}>Sin resultados 🔍</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
