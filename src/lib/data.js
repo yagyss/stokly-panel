@@ -110,6 +110,7 @@ export async function acceptPendingInvites(user) {
 // ══════════════════════════════════════════════════════════════
 export const productFromRow = (r) => ({
   id: String(r.id),
+  addedAt: r.created_at ? String(r.created_at).slice(0, 10) : "",
   name: r.name,
   sku: r.sku,
   brand: r.brand || "",
@@ -169,6 +170,7 @@ export const expenseFromRow = (r) => ({
   concept: r.concept,
   amount: Number(r.amount) || 0,
   date: typeof r.date === "string" ? r.date.slice(0, 10) : r.date,
+  dateEnd: r.date_end ? String(r.date_end).slice(0, 10) : "",
   category: r.category || "Otro",
   emoji: r.emoji || "💡",
 });
@@ -180,6 +182,7 @@ export const expenseToRow = (e, uid, ws) => ({
   concept: e.concept,
   amount: +e.amount || 0,
   date: e.date,
+  date_end: e.dateEnd || null,
   category: e.category || "Otro",
   emoji: e.emoji || "💡",
 });

@@ -130,6 +130,66 @@ const parseCSV = (text) => {
   }).filter(Boolean);
 };
 
+// ── Fechas locales (evita el salto de día de toISOString en UTC-5) ────────────
+const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const sumarDiasISO = (iso, n) => { const [y,m,d] = String(iso).split("-").map(Number); const dt = new Date(y, m-1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
+const restarDiasISO = (n) => sumarDiasISO(hoyISO(), -n);
+const dmISO = (iso) => { const p = String(iso||"").split("-"); return p.length === 3 ? `${Number(p[2])}/${Number(p[1])}` : "…"; };
+
+// ── Filtros por rango de tiempo (Ventas / Gastos / Finanzas) ─────────────────
+const RANGOS = [
+  { id:"todo", label:"Todo" }, { id:"dia", label:"Día" }, { id:"semana", label:"Semana" }, { id:"d15", label:"15 días" },
+  { id:"mes", label:"Mes" }, { id:"trim", label:"Trimestre" }, { id:"m6", label:"6 meses" }, { id:"an", label:"Año" },
+  { id:"custom", label:"Personalizado" },
+];
+const RANGO_DIAS = { dia:0, semana:6, d15:14, mes:29, trim:89, m6:179, an:364 };
+function rangoAFechas(r) {
+  if (!r || r.id === "todo") return { from:null, to:null };
+  if (r.id === "custom") return { from: r.from || null, to: r.to || null };
+  return { from: restarDiasISO(RANGO_DIAS[r.id] || 0), to: hoyISO() };
+}
+const rangoLabel = (r) => r.id === "custom" ? `${r.from || "…"} → ${r.to || "…"}` : ((RANGOS.find(x => x.id === r.id) || {}).label || "");
+// Ventas: la fecha cae dentro del rango
+function enRango(fecha, rango) {
+  const { from, to } = rangoAFechas(rango);
+  if (!from && !to) return true;
+  const f = fecha || hoyISO();
+  if (from && f < from) return false;
+  if (to && f > to) return false;
+  return true;
+}
+// Gastos: pueden tener rango propio (date → dateEnd); basta con que SE CRUCEN
+function solapaRango(e, rango) {
+  const { from, to } = rangoAFechas(rango);
+  if (!from && !to) return true;
+  const ini = e.date || hoyISO();
+  const fin = e.dateEnd || ini;
+  if (from && fin < from) return false;
+  if (to && ini > to) return false;
+  return true;
+}
+function DateRangeFilter({ rango, onChange }) {
+  return (
+    <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4, alignItems:"center" }}>
+      {RANGOS.map(r => (
+        <button
+          key={r.id}
+          className={`filter-btn ${rango.id === r.id ? "active" : ""}`}
+          style={{ whiteSpace:"nowrap", flexShrink:0 }}
+          onClick={() => onChange(r.id === "custom" ? { id:"custom", from: rango.from || restarDiasISO(29), to: rango.to || hoyISO() } : { id:r.id })}
+        >{r.label}</button>
+      ))}
+      {rango.id === "custom" && (
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
+          <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12, width:140 }} value={rango.from || ""} onChange={e => onChange({ ...rango, from:e.target.value })} />
+          <span style={{ fontWeight:900, color:C.muted }}>→</span>
+          <input type="date" className="stk-input" style={{ padding:"7px 8px", fontSize:12, width:140 }} value={rango.to || ""} onChange={e => onChange({ ...rango, to:e.target.value })} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Grotesk:wght@600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -893,7 +953,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
             <table style={{ borderCollapse:"collapse", width:"100%", minWidth:1020, fontSize:13 }}>
               <thead>
                 <tr style={{ background:C.bg }}>
-                  {["","Nombre","SKU","Marca","Color","Talla","Categoría","Precio","Costo","Margen","Mín","Stock","Vendidos",""].map((h,i)=>(
+                  {["","Nombre","SKU","Marca","Color","Talla","Categoría","Precio","Costo","Margen","Mín","Stock","Vendidos","Agregado",""].map((h,i)=>(
                     <th key={i} style={{ padding:"11px 10px", fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", textAlign: (i>=7&&i<=12)?"right":"left", whiteSpace:"nowrap", borderBottom:"1.5px solid "+C.border }}>{h}</th>
                   ))}
                 </tr>
@@ -918,6 +978,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                       <td style={{ ...td, textAlign:"right", color:C.muted }}>{p.minStock}</td>
                       <td style={{ ...td, textAlign:"right", fontWeight:900, color:st.color }}>{p.stock} {st.dot}</td>
                       <td style={{ ...td, textAlign:"right", color:C.muted, fontWeight:700 }}>{p.sold}</td>
+                      <td style={{ ...td, color:C.muted, fontWeight:700 }}>{p.addedAt ? p.addedAt.split("-").reverse().join("/") : "—"}</td>
                       <td style={td}>
                         <div style={{ display:"flex", gap:4 }}>
                           <button className="stock-btn" style={{ width:26, height:26, fontSize:13 }} onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock-1)}:x))}>−</button>
@@ -928,7 +989,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                     </tr>
                   );
                 })}
-                {filtered.length===0 && <tr><td colSpan={14} style={{ textAlign:"center", padding:40, color:C.muted, fontWeight:700 }}>Sin resultados 🔍</td></tr>}
+                {filtered.length===0 && <tr><td colSpan={15} style={{ textAlign:"center", padding:40, color:C.muted, fontWeight:700 }}>Sin resultados 🔍</td></tr>}
               </tbody>
             </table>
           </div>
@@ -943,7 +1004,10 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 
 // ── SALES ─────────────────────────────────────────────────────────────────────
 function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, showToast }) {
-  const byMethod = sales.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
+  const [rango, setRango] = useState({ id:"todo" });
+  const ventasR = sales.filter(s => enRango(s.date, rango));
+  const totalR = ventasR.reduce((a,s)=>a+s.total,0);
+  const byMethod = ventasR.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
   const clearSales = () => {
     if (!window.confirm(`🗑️ ¿Vaciar ventas?\n\nSe eliminarán PERMANENTEMENTE las ${sales.length} ventas registradas.`)) return;
     if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todas las ventas?")) return;
@@ -953,12 +1017,13 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
   const colors = { Efectivo:[C.green,C.greenLight], Tarjeta:[C.blue,C.blueLight], Nequi:[C.purple,C.purpleLight], Transferencia:[C.orange,C.orangeLight], Daviplata:[C.red,C.redLight] };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+      <DateRangeFilter rango={rango} onChange={setRango} />
       <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>Total del mes</div>
-        <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalSales)}</div>
+        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total histórico":"Total · "+rangoLabel(rango)}</div>
+        <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
       </div>
       <div className="grid-4">
-        {Object.entries(byMethod).map(([m,total])=>{const[color,bg]=colors[m]||[C.muted,C.bg];return <div key={m} className="stat-card" style={{ background:bg }}><div style={{ fontSize:12,fontWeight:800,color,marginBottom:4 }}>{m}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(total)}</div><div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{pct(total,totalSales)}%</div></div>;})}
+        {Object.entries(byMethod).map(([m,total])=>{const[color,bg]=colors[m]||[C.muted,C.bg];return <div key={m} className="stat-card" style={{ background:bg }}><div style={{ fontSize:12,fontWeight:800,color,marginBottom:4 }}>{m}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(total)}</div><div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{pct(total,totalR)}%</div></div>;})}
       </div>
       <div className="card" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -967,7 +1032,7 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
             <button onClick={clearSales} title="Borrar todas las ventas (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar ventas</button>
           )}
         </div>
-        {[...sales].reverse().map(s=>{
+        {[...ventasR].reverse().map(s=>{
           const p=products.find(x=>x.id===s.productId);
           return (
             <div key={s.id} className="row-item">
@@ -986,6 +1051,7 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
             </div>
           );
         })}
+        {ventasR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>Sin ventas en este rango 📅</div>}
       </div>
     </div>
   );
@@ -993,7 +1059,10 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile }) {
-  const byCategory = expenses.reduce((acc,e)=>{acc[e.category]=(acc[e.category]||0)+e.amount;return acc;},{});
+  const [rango, setRango] = useState({ id:"todo" });
+  const gastosR = expenses.filter(e => solapaRango(e, rango));
+  const totalR = gastosR.reduce((a,e)=>a+e.amount,0);
+  const byCategory = gastosR.reduce((acc,e)=>{acc[e.category]=(acc[e.category]||0)+e.amount;return acc;},{});
   const clearExpenses = () => {
     if (!window.confirm(`🗑️ ¿Vaciar gastos?\n\nSe eliminarán PERMANENTEMENTE los ${expenses.length} gastos.`)) return;
     if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todos los gastos?")) return;
@@ -1002,9 +1071,10 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
   };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+      <DateRangeFilter rango={rango} onChange={setRango} />
       <div style={{ background:"linear-gradient(135deg,#FF8C42,#FF5A5F)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>Total gastos</div>
-        <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalExpenses)}</div>
+        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total gastos":"Total gastos · "+rangoLabel(rango)}</div>
+        <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
       </div>
       <div className="grid-4">
         {Object.entries(byCategory).map(([cat,amount])=><div key={cat} className="stat-card" style={{ background:C.orangeLight }}><div style={{ fontSize:12,fontWeight:800,color:C.orange,marginBottom:4 }}>{cat}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(amount)}</div></div>)}
@@ -1016,16 +1086,17 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
             <button onClick={clearExpenses} title="Borrar todos los gastos (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar gastos</button>
           )}
         </div>
-        {[...expenses].reverse().map(e=>(
+        {[...gastosR].reverse().map(e=>(
           <div key={e.id} className="row-item">
             <div style={{ width:38,height:38,background:C.orangeLight,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20 }}>{e.emoji}</div>
-            <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14 }}>{e.concept}</div><div style={{ fontSize:11,color:C.muted,fontWeight:600 }}>{e.date} · {e.category}</div></div>
+            <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14 }}>{e.concept}</div><div style={{ fontSize:11,color:C.muted,fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}</div></div>
             <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4 }}>
               <div style={{ fontWeight:900,fontSize:16,color:C.red }}>{fmt(e.amount)}</div>
               <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar el gasto "${e.concept}"?\n\nSe borrará PERMANENTEMENTE.`)) return; setExpenses(prev=>prev.filter(x=>x.id!==e.id)); showToast("🗑️ Gasto eliminado"); }} style={{ background:"none",border:"none",color:C.red,fontSize:11,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Borrar</button>
             </div>
           </div>
         ))}
+        {gastosR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>Sin gastos en este rango 📅</div>}
       </div>
     </div>
   );
@@ -1034,41 +1105,59 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
 // ── FINANCE ───────────────────────────────────────────────────────────────────
 function Finance({ products, sales, expenses, totalSales, totalExpenses, profit, isMobile }) {
   const [sec, setSec] = useState("cashflow");
-  const mktExp = expenses.filter(e=>e.category==="Marketing").reduce((a,e)=>a+e.amount,0);
-  const opExp  = expenses.filter(e=>e.category==="Operacional").reduce((a,e)=>a+e.amount,0);
-  const cogs   = products.reduce((a,p)=>a+p.sold*p.cost,0);
-  const grossP = totalSales - cogs;
-  const gMargin= pct(grossP,totalSales);
-  const nMargin= pct(profit,totalSales);
-  const cpa    = sales.length > 0 ? mktExp/sales.length : 0;
+  const [rango, setRango] = useState({ id:"todo" });
+  const sF = sales.filter(s => enRango(s.date, rango));
+  const eF = expenses.filter(e => solapaRango(e, rango));
+  const totalSalesR = sF.reduce((a,s)=>a+s.total,0);
+  const totalExpensesR = eF.reduce((a,e)=>a+e.amount,0);
+  const profitR = totalSalesR - totalExpensesR;
+  const mktExp = eF.filter(e=>e.category==="Marketing").reduce((a,e)=>a+e.amount,0);
+  const opExp  = eF.filter(e=>e.category==="Operacional").reduce((a,e)=>a+e.amount,0);
+  const cogs   = sF.reduce((a,s)=>{const p=products.find(x=>String(x.id)===String(s.productId));return a+(p?p.cost*s.qty:0);},0);
+  const grossP = totalSalesR - cogs;
+  const gMargin= pct(grossP,totalSalesR);
+  const nMargin= pct(profitR,totalSalesR);
+  const cpa    = sF.length > 0 ? mktExp/sF.length : 0;
   const fixed  = opExp + mktExp;
   const breakEven = gMargin > 0 ? (fixed/(gMargin/100)) : 0;
   const frozen = products.reduce((a,p)=>a+p.stock*p.cost,0);
-  const cfWeeks = [
-    {l:"Sem 1",e:sales.filter(s=>s.date<="2025-02-07").reduce((a,s)=>a+s.total,0), s:expenses.filter(e=>e.date<="2025-02-07").reduce((a,e)=>a+e.amount,0)},
-    {l:"Sem 2",e:sales.filter(s=>s.date>"2025-02-07"&&s.date<="2025-02-14").reduce((a,s)=>a+s.total,0), s:expenses.filter(e=>e.date>"2025-02-07"&&e.date<="2025-02-14").reduce((a,e)=>a+e.amount,0)},
-    {l:"Sem 3",e:sales.filter(s=>s.date>"2025-02-14"&&s.date<="2025-02-21").reduce((a,s)=>a+s.total,0), s:expenses.filter(e=>e.date>"2025-02-14"&&e.date<="2025-02-21").reduce((a,e)=>a+e.amount,0)},
-    {l:"Sem 4",e:sales.filter(s=>s.date>"2025-02-21").reduce((a,s)=>a+s.total,0), s:expenses.filter(e=>e.date>"2025-02-21").reduce((a,e)=>a+e.amount,0)},
-  ];
+  const rg = rangoAFechas(rango);
+  const todasFechas = [...sales.map(s=>s.date), ...expenses.map(e=>e.date)].filter(Boolean).sort();
+  const f0 = rg.from || todasFechas[0] || restarDiasISO(29);
+  const t0 = rg.to || hoyISO();
+  const diasTot = Math.max(1, Math.round((Date.parse(t0) - Date.parse(f0)) / 86400000) + 1);
+  const paso = Math.max(1, Math.ceil(diasTot / 4));
+  const cfWeeks = [0,1,2,3].map(i => {
+    const bf = sumarDiasISO(f0, i * paso);
+    const btRaw = sumarDiasISO(f0, (i + 1) * paso - 1);
+    if (bf > t0) return { l:"—", e:0, s:0 };
+    const bt = btRaw > t0 ? t0 : btRaw;
+    return {
+      l: dmISO(bf) + "–" + dmISO(bt),
+      e: sF.filter(s => s.date >= bf && s.date <= bt).reduce((a,s)=>a+s.total,0),
+      s: eF.filter(x => { const ini = x.date || ""; const fin = x.dateEnd || ini; return fin >= bf && ini <= bt; }).reduce((a,x)=>a+x.amount,0),
+    };
+  });
   const maxCF = Math.max(...cfWeeks.map(d=>Math.max(d.e,d.s)),1);
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+      <DateRangeFilter rango={rango} onChange={setRango} />
       <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4 }}>
         {[{id:"cashflow",l:"💧 Flujo de Caja"},{id:"profitability",l:"💎 Rentabilidad"},{id:"indicators",l:"🎯 Indicadores"}].map(s=><button key={s.id} className={`filter-btn ${sec===s.id?"active":""}`} onClick={()=>setSec(s.id)}>{s.l}</button>)}
       </div>
       {sec==="cashflow" && (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          <div style={{ background:profit>=0?"linear-gradient(135deg,#00C896,#06B6D4)":"linear-gradient(135deg,#FF5A5F,#FF8C42)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-            <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:2 }}>{profit>=0?"✅ Flujo positivo":"🚨 Flujo negativo"}</div>
-            <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:14 }}>{fmt(profit)}</div>
+          <div style={{ background:profitR>=0?"linear-gradient(135deg,#00C896,#06B6D4)":"linear-gradient(135deg,#FF5A5F,#FF8C42)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
+            <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:2 }}>{profitR>=0?"✅ Flujo positivo":"🚨 Flujo negativo"}{rango.id!=="todo"?" · "+rangoLabel(rango):""}</div>
+            <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:14 }}>{fmt(profitR)}</div>
             <div className="grid-2" style={{ maxWidth:400 }}>
-              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>ENTRADAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalSales)}</div></div>
-              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>SALIDAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalExpenses)}</div></div>
+              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>ENTRADAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalSalesR)}</div></div>
+              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>SALIDAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalExpensesR)}</div></div>
             </div>
           </div>
           <div className={isMobile?"":"desktop-2col"}>
             <div className="card" style={{ padding:20 }}>
-              <div className="section-title">📅 Flujo semanal</div>
+              <div className="section-title">📅 Flujo por rangos</div>
               <div style={{ display:"flex", gap:10, alignItems:"flex-end", height:120, marginBottom:10 }}>
                 {cfWeeks.map((d,i)=>(
                   <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", gap:4, alignItems:"center" }}>
@@ -1097,16 +1186,16 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
       {sec==="profitability" && (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           <div style={{ background:"linear-gradient(135deg,#8B5CF6,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-            <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>Ganancia bruta total</div>
+            <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>{rango.id==="todo"?"Ganancia bruta total":"Ganancia bruta · "+rangoLabel(rango)}</div>
             <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:4 }}>{fmt(grossP)}</div>
             <div style={{ fontSize:13,opacity:0.85 }}>Bruto: {gMargin}% · Neto: {nMargin}%</div>
           </div>
           <div className={isMobile?"":"desktop-2col"} style={{ gap:12 }}>
-            {products.map(p=>{const rev=p.sold*p.price;const cog=p.sold*p.cost;const gp=rev-cog;const m=rev>0?pct(gp,rev):0;return(
+            {products.filter(p=>rango.id==="todo"||sF.some(s=>String(s.productId)===String(p.id))).map(p=>{const mis=sF.filter(s=>String(s.productId)===String(p.id));const unidades=mis.reduce((a,s)=>a+s.qty,0);const rev=mis.reduce((a,s)=>a+s.total,0);const cog=unidades*p.cost;const gp=rev-cog;const m=rev>0?pct(gp,rev):0;return(
               <div key={p.id} className="card" style={{ padding:16 }}>
                 <div style={{ display:"flex",gap:10,alignItems:"center",marginBottom:12 }}>
                   <div className="color-dot" style={{ width:20,height:20,background:getColorCSS(p.color) }} />
-                  <div style={{ flex:1 }}><div style={{ fontWeight:900,fontSize:14 }}>{p.name} <span style={{ color:C.muted,fontWeight:600,fontSize:12 }}>· {p.color}/T{p.size}</span></div></div>
+                  <div style={{ flex:1 }}><div style={{ fontWeight:900,fontSize:14 }}>{p.name} <span style={{ color:C.muted,fontWeight:600,fontSize:12 }}>· {p.color}/T{p.size} · {unidades} uds</span></div></div>
                   <span className="pill" style={{ background:m>40?C.greenLight:m>20?C.yellowLight:C.redLight, color:m>40?C.green:m>20?C.yellow:C.red }}>{m}%</span>
                 </div>
                 <div className="grid-2" style={{ gap:8 }}>
@@ -1134,14 +1223,14 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",marginBottom:4 }}>Punto de Equilibrio</div>
             <div style={{ fontSize:36,fontWeight:900,color:C.orange,marginBottom:10 }}>{fmt(breakEven)}</div>
-            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSales,breakEven))}%`, background:totalSales>=breakEven?C.green:"linear-gradient(90deg,#FF8C42,#FFB800)" }} /></div>
-            <div style={{ background:totalSales>=breakEven?C.greenLight:C.yellowLight,borderRadius:12,padding:12,fontSize:13,fontWeight:700,color:totalSales>=breakEven?C.green:C.yellow }}>
-              {totalSales>=breakEven?"✅ Superaste el punto de equilibrio":`⚠️ Faltan ${fmt(breakEven-totalSales)}`}
+            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSalesR,breakEven))}%`, background:totalSalesR>=breakEven?C.green:"linear-gradient(90deg,#FF8C42,#FFB800)" }} /></div>
+            <div style={{ background:totalSalesR>=breakEven?C.greenLight:C.yellowLight,borderRadius:12,padding:12,fontSize:13,fontWeight:700,color:totalSalesR>=breakEven?C.green:C.yellow }}>
+              {totalSalesR>=breakEven?"✅ Superaste el punto de equilibrio":`⚠️ Faltan ${fmt(breakEven-totalSalesR)}`}
             </div>
           </div>
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">📊 Márgenes</div>
-            {[{l:"Margen Bruto",v:gMargin,a:grossP,c:C.green},{l:"Margen Neto",v:nMargin,a:profit,c:nMargin>0?C.teal:C.red}].map(m=>(
+            {[{l:"Margen Bruto",v:gMargin,a:grossP,c:C.green},{l:"Margen Neto",v:nMargin,a:profitR,c:nMargin>0?C.teal:C.red}].map(m=>(
               <div key={m.l} style={{ marginBottom:18 }}>
                 <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
                   <span style={{ fontWeight:800,fontSize:14 }}>{m.l}</span>
@@ -1154,7 +1243,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">💹 ROI del negocio</div>
             <div style={{ textAlign:"center",padding:"10px 0 20px" }}>
-              <div style={{ fontSize:52,fontWeight:900,color:profit>0?C.green:C.red }}>{pct(profit,totalExpenses)}%</div>
+              <div style={{ fontSize:52,fontWeight:900,color:profitR>0?C.green:C.red }}>{pct(profitR,totalExpensesR)}%</div>
               <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>retorno sobre lo invertido</div>
             </div>
           </div>
@@ -1484,7 +1573,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
 function AddSaleModal({ products, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
   const p=products.find(x=>String(x.id)===String(pid)); const total=p?p.price*qty:0;
-  function save() { if(!p||qty<1||p.stock<qty) return; onSave({id:newId(),productId:String(pid),qty:+qty,total,date:new Date().toISOString().split("T")[0],method},String(pid),+qty); }
+  function save() { if(!p||qty<1||p.stock<qty) return; onSave({id:newId(),productId:String(pid),qty:+qty,total,date:hoyISO(),method},String(pid),+qty); }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
@@ -1524,9 +1613,16 @@ function AddSaleModal({ products, onClose, onSave }) {
 }
 
 function AddExpenseModal({ onClose, onSave }) {
-  const [f,setF]=useState({concept:"",amount:"",category:"Operacional"});
+  const [f,setF]=useState({concept:"",amount:"",category:"Operacional",date:hoyISO(),dateEnd:""});
+  const [err,setErr]=useState("");
   const ce={Operacional:"🏪",Compras:"🛍️",Marketing:"📱",Logística:"🚚",Otro:"💡"};
-  function save() { if(!f.concept||!f.amount) return; onSave({...f,id:newId(),amount:+f.amount,date:new Date().toISOString().split("T")[0],emoji:ce[f.category]||"💡"}); }
+  function save() {
+    if(!f.concept.trim()||!f.amount){ setErr("⚠️ Completa el concepto y el monto."); return; }
+    if(f.dateEnd&&f.date&&f.dateEnd<f.date){ setErr("⚠️ La fecha \"Hasta\" es anterior a la fecha de inicio."); return; }
+    if(f.date>hoyISO()){ if(!window.confirm(`⚠️ La fecha es FUTURA (${f.date}).\n\n¿Registrar el gasto de todas formas?`)) return; }
+    setErr("");
+    onSave({...f,id:newId(),amount:+f.amount,date:f.date||hoyISO(),dateEnd:f.dateEnd||"",emoji:ce[f.category]||"💡"});
+  }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
@@ -1535,6 +1631,11 @@ function AddExpenseModal({ onClose, onSave }) {
         <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
           <div><div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Concepto</div><input className="stk-input" placeholder="Ej: Arriendo del mes" value={f.concept} onChange={e=>setF(p=>({...p,concept:e.target.value}))} /></div>
           <div><div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Monto ($)</div><input className="stk-input" type="number" placeholder="0" value={f.amount} onChange={e=>setF(p=>({...p,amount:e.target.value}))} /></div>
+          <div style={{ display:"flex", gap:10 }}>
+            <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Fecha del gasto</div><input className="stk-input" type="date" value={f.date} onChange={e=>setF(p=>({...p,date:e.target.value}))} /></div>
+            <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Hasta (opcional)</div><input className="stk-input" type="date" value={f.dateEnd} onChange={e=>setF(p=>({...p,dateEnd:e.target.value}))} /></div>
+          </div>
+          <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginTop:-6 }}>📅 Si duró varios días (ej: publicidad del 24 sep al 10 oct). Déjalo vacío si fue un solo día.</div>
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Categoría</div>
             <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
@@ -1542,6 +1643,7 @@ function AddExpenseModal({ onClose, onSave }) {
             </div>
           </div>
         </div>
+        {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800, marginTop:4 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
           <button className="btn-main btn-orange" onClick={save} style={{ flex:2 }}>Guardar gasto</button>
