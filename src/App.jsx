@@ -109,17 +109,23 @@ const parseCSV = (text) => {
   const lines = text.trim().split("\n").map(l=>l.replace(/\r/g,""));
   if (lines.length < 2) return [];
   const delim = lines[0].includes("\t") ? "\t" : ",";
-  const headers = lines[0].split(delim).map(h=>h.replace(/"/g,"").trim().toLowerCase());
-  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"] };
+  // Divide una línea respetando campos entre comillas (permite comas dentro de valores)
+  const splitLine = (line) => { const out=[]; let cur=""; let q=false;
+    for (let i=0;i<line.length;i++){ const ch=line[i];
+      if (q){ if (ch==='"'){ if (line[i+1]==='"'){ cur+='"'; i++; } else { q=false; } } else { cur+=ch; } }
+      else { if (ch==='"'){ q=true; } else if (ch===delim){ out.push(cur); cur=""; } else { cur+=ch; } }
+    } out.push(cur); return out; };
+  const headers = splitLine(lines[0]).map(h=>h.replace(/"/g,"").trim().toLowerCase());
+  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"] };
   const findCol = k => { for (const v of (colMap[k]||[k])) { const i = headers.findIndex(h=>h.includes(v)); if (i!==-1) return i; } return -1; };
   const cols = {}; for (const k of Object.keys(colMap)) cols[k] = findCol(k);
   return lines.slice(1).filter(l=>l.trim()).map((line,i) => {
-    const vals = line.split(delim).map(v=>v.replace(/"/g,"").trim());
+    const vals = splitLine(line).map(v=>v.replace(/"/g,"").trim());
     const get = k => cols[k]!==-1 ? (vals[cols[k]]||"") : "";
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
     if (!name||!sku||!stockRaw) return null;
     const category=get("category")||"Otro";
-    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦" };
+    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"" };
   }).filter(Boolean);
 };
 
@@ -1550,6 +1556,21 @@ function ImportModal({ onClose, onImport, importView="file" }) {
   const [src,setSrc]=useState(importView==="sheet"?"sheet":"file"); // "file" | "sheet"
   const [sheetUrl,setSheetUrl]=useState(""); const [loadingSheet,setLoadingSheet]=useState(false);
   const fileRef=useRef();
+
+  // Descarga la plantilla oficial: headers exactos +1 producto de ejemplo + columna de imagen
+  function descargarPlantilla() {
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    const headers = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (url de la foto)"];
+    const ejemplo = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","https://placehold.co/400x400"];
+    const csv = "\uFEFF" + headers.map(esc).join(",") + "\n" + ejemplo.map(esc).join(",") + "\n";
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "plantilla-inventario-stokly.csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
   function processFile(file) {
     if(!file)return; setFileName(file.name); setError("");
     if(file.name.match(/\.xlsx?$/i)) {
@@ -1613,9 +1634,18 @@ function ImportModal({ onClose, onImport, importView="file" }) {
           <div style={{ fontWeight:900,fontSize:20,marginBottom:14 }}>📥 Importar inventario</div>
 
           {/* Selector de origen */}
-          <div style={{ display:"flex",gap:10,marginBottom:16 }}>
+          <div style={{ display:"flex",gap:10,marginBottom:12 }}>
             {srcBtn("file","📂","Excel / CSV","Sube un archivo",C.blue,C.blueLight)}
             {srcBtn("sheet","🔗","Google Sheets","Pega el enlace",C.green,C.greenLight)}
+          </div>
+
+          {/* Plantilla oficial descargable */}
+          <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
+              📄 <b>Plantilla oficial</b> — trae todos los campos listos, <b>un producto de ejemplo</b> y la columna <b>imagen (url de la foto)</b>. Sirve para <b>Excel, CSV y Google Sheets</b>.<br/>
+              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · la imagen debe ser un enlace público (https://…)</span>
+            </div>
+            <button className="btn-outline" onClick={descargarPlantilla} style={{ width:"100%", fontWeight:900 }}>📥 Descargar plantilla (CSV)</button>
           </div>
 
           {src==="file" && (
@@ -1637,7 +1667,8 @@ function ImportModal({ onClose, onImport, importView="file" }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                Encabezados necesarios: <b>nombre, sku, stock</b> (opcionales: marca, color, talla, categoría, precio, costo, mínimo).
+                Encabezados necesarios: <b>nombre, sku, stock</b> (opcionales: marca, color, talla, categoría, precio, costo, mínimo, <b>imagen</b>).<br/>
+                💡 Toma la <b>plantilla</b> de arriba, súbela a Google Sheets y llénala.
               </div>
             </div>
           )}
@@ -1659,7 +1690,9 @@ function ImportModal({ onClose, onImport, importView="file" }) {
           <div className="card" style={{ padding:14,maxHeight:250,overflowY:"auto",marginBottom:16 }}>
             {parsed.slice(0,40).map((p,i)=>(
               <div key={i} style={{ display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border }}>
-                <div className="color-dot" style={{ background:getColorCSS(p.color) }} />
+                {p.image
+                  ? <img src={p.image} alt="" style={{ width:26, height:26, borderRadius:7, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />
+                  : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}
                 <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div><div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}</div></div>
                 <span style={{ fontWeight:900,fontSize:12,color:C.green }}>{p.stock} uds</span>
               </div>
