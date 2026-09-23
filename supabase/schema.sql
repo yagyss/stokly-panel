@@ -371,3 +371,6 @@ create policy "product images member delete" on storage.objects
 -- (ej: PUBLICIDAD $100.000 — del 24 de septiembre al 10 de octubre)
 alter table expenses add column if not exists date_end date;
 
+-- Código de barras por variante de producto (para escanear la etiqueta de la prenda)
+alter table products add column if not exists barcode text;
+

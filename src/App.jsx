@@ -117,7 +117,7 @@ const parseCSV = (text) => {
       else { if (ch==='"'){ q=true; } else if (ch===delim){ out.push(cur); cur=""; } else { cur+=ch; } }
     } out.push(cur); return out; };
   const headers = splitLine(lines[0]).map(h=>h.replace(/"/g,"").trim().toLowerCase());
-  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"] };
+  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
   const findCol = k => { for (const v of (colMap[k]||[k])) { const i = headers.findIndex(h=>h.includes(v)); if (i!==-1) return i; } return -1; };
   const cols = {}; for (const k of Object.keys(colMap)) cols[k] = findCol(k);
   return lines.slice(1).filter(l=>l.trim()).map((line,i) => {
@@ -126,7 +126,7 @@ const parseCSV = (text) => {
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
     if (!name||!sku||!stockRaw) return null;
     const category=get("category")||"Otro";
-    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"" };
+    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"",barcode:get("barcode")||"" };
   }).filter(Boolean);
 };
 
@@ -144,6 +144,31 @@ const normalizarFotoURL = (v) => {
   if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
   return s;
 };
+
+// Carga perezosa de SheetJS — compartida por ImportModal y "Descargar inventario"
+let xlsxCargas = null;
+function cargarScriptXLSX(msgCarga, msgFallo, cb, setMsg) {
+  if (window.XLSX) { cb(); return; }
+  if (xlsxCargas) { xlsxCargas.push({ cb, setMsg, msgFallo }); return; }
+  xlsxCargas = [{ cb, setMsg, msgFallo }];
+  setMsg(msgCarga);
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => { try { x.setMsg(""); x.cb(); } catch (e) { console.error("[stokly] xlsx:", e); } }); };
+  s.onerror = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => x.setMsg(x.msgFallo)); };
+  document.head.appendChild(s);
+}
+
+// Busca un producto por el código escaneado de la etiqueta (SKU o código de barras)
+function buscarPorCodigo(products, codeRaw) {
+  const c = String(codeRaw || "").replace(/\*/g, "").trim().toUpperCase();
+  if (!c) return null;
+  let p = products.find(x => String(x.sku || "").trim().toUpperCase() === c);
+  if (!p) p = products.find(x => String(x.barcode || "").trim().toUpperCase() === c);
+  const limpio = (s) => String(s || "").toUpperCase().replace(/[\s-]/g, "");
+  if (!p) p = products.find(x => limpio(x.sku) === limpio(c)) || products.find(x => x.barcode && limpio(x.barcode) === limpio(c));
+  return p || null;
+}
 
 // ── Filtros por rango de tiempo (Ventas / Gastos / Finanzas) ─────────────────
 const RANGOS = [
@@ -236,6 +261,85 @@ function DateRangeFilter({ rango, onChange }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// 📷 Escáner de código de barras / QR — lee la etiqueta de la prenda con la cámara
+function ScanModal({ onClose, onScan }) {
+  const [msg, setMsg] = useState("⏳ Preparando la cámara…");
+  const [err, setErr] = useState("");
+  const [manual, setManual] = useState("");
+  const qref = useRef(null);
+  const procesando = useRef(false);
+  const cbRef = useRef(onScan);
+  cbRef.current = onScan;
+  useEffect(() => {
+    let vivo = true;
+    const recibir = (txt) => {
+      if (!vivo || procesando.current) return;
+      procesando.current = true;
+      const e = cbRef.current(txt);
+      if (e) { setErr(e); procesando.current = false; }
+    };
+    const arrancar = async () => {
+      if (!vivo) return;
+      try {
+        let ctorCfg;
+        try {
+          const F = window.Html5QrcodeSupportedFormats;
+          if (F) {
+            const fmts = [F.QR_CODE, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_39, F.CODE_93, F.CODE_128, F.ITF, F.CODABAR].filter(x => x != null);
+            if (fmts.length) ctorCfg = { formatsToSupport: fmts };
+          }
+        } catch (_) { /* si no, lee todos los formatos por defecto */ }
+        const q = ctorCfg ? new window.Html5Qrcode("stokly-scanner", ctorCfg) : new window.Html5Qrcode("stokly-scanner");
+        qref.current = q;
+        await q.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 230, height: 230 } }, recibir, () => {});
+        if (vivo) setMsg("");
+      } catch (e) {
+        console.error("[stokly] scanner:", e && e.message);
+        if (vivo) setMsg("⚠️ No pude abrir la cámara (permiso denegado o sin cámara). Escribe el código abajo ✍️");
+      }
+    };
+    if (window.Html5Qrcode) { arrancar(); }
+    else {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+      s.onload = () => { arrancar(); };
+      s.onerror = () => { if (vivo) setMsg("❌ No se pudo cargar el escáner (revisa tu conexión). Escribe el código abajo ✍️"); };
+      document.head.appendChild(s);
+    }
+    return () => {
+      vivo = false;
+      const q = qref.current;
+      if (q) { try { q.stop().then(() => q.clear()).catch(() => {}); } catch (_) {} }
+    };
+  }, []);
+  const enviarManual = (e) => {
+    if (e) e.preventDefault();
+    const v = manual.trim();
+    if (!v) return;
+    const r = cbRef.current(v);
+    if (r) setErr(r);
+  };
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:6 }}>📷 Escanear etiqueta</div>
+        <div style={{ fontSize:13, color:C.muted, fontWeight:700, marginBottom:14, lineHeight:1.5 }}>
+          Apunta la cámara al <b>código de barras o QR</b> de la prenda y listo. ¿Sin cámara? Escríbelo a mano abajo.
+        </div>
+        <div id="stokly-scanner" style={{ width:"100%", minHeight:230, background:"#0E1116", borderRadius:16, overflow:"hidden", marginBottom:10 }} />
+        {msg && <div style={{ background: msg.charAt(0) === "⏳" ? C.blueLight : C.yellowLight, color: msg.charAt(0) === "⏳" ? C.blue : C.yellow, borderRadius:12, padding:"10px 12px", fontSize:12.5, fontWeight:800, marginBottom:10, lineHeight:1.5 }}>{msg}</div>}
+        {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800, marginBottom:10 }}>⚠️ {err}</div>}
+        <form onSubmit={enviarManual} style={{ display:"flex", gap:8, marginBottom:14 }}>
+          <input className="stk-input" style={{ flex:1, minWidth:0 }} placeholder="✍️ O escribe el código / SKU" value={manual} onChange={e => { setManual(e.target.value); setErr(""); }} />
+          <button type="submit" className="btn-main" style={{ padding:"0 16px", flexShrink:0 }}>Buscar</button>
+        </form>
+        <button className="btn-outline" onClick={onClose} style={{ width:"100%" }}>Cerrar escáner</button>
+      </div>
     </div>
   );
 }
@@ -733,6 +837,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   const [photoTarget, setPhotoTarget] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [editGroup, setEditGroup] = useState(null); // referencia en edición (agregar tallas/colores)
+  const [scanOpen, setScanOpen] = useState(false);   // escáner de código de barras
   const fileRef = useRef(null);
 
   // Sube la foto de una referencia (carpeta = panel de trabajo)
@@ -770,6 +875,39 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
     setProducts([]);
     showToast("🗑️ Inventario vaciado — empieza desde cero 🚀");
   };
+
+  // ⬇️ Descarga TODO el inventario en Excel (.xlsx) con todas las columnas
+  function descargarInventario() {
+    if (!products.length) { showToast("📭 Tu inventario está vacío"); return; }
+    cargarScriptXLSX(
+      "⏳ Preparando tu inventario…",
+      "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
+      () => {
+        try {
+          const cab = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","margen %","vendidos","codigo de barras","agregado","imagen"];
+          const filas = products.map(p => [
+            p.name, p.sku, p.brand || "", p.color || "", p.size || "", p.category,
+            p.stock, p.minStock, p.price, p.cost,
+            p.price ? Math.round(((p.price - p.cost) / p.price) * 100) : 0,
+            p.sold, p.barcode || "",
+            p.addedAt ? p.addedAt.split("-").reverse().join("/") : "",
+            p.image || "",
+          ]);
+          const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
+          ws["!cols"] = cab.map((h, i) => {
+            let m = String(h).length;
+            for (const f of filas) { const l = String(f[i] == null ? "" : f[i]).length; if (l > m) m = l; }
+            return { wch: Math.min(45, m + 2) };
+          });
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+          XLSX.writeFile(wb, `inventario-stokly-${hoyISO()}.xlsx`);
+          showToast(`✅ Inventario descargado: ${products.length} productos`);
+        } catch (e) { console.error("[stokly] export:", e); showToast("❌ No se pudo descargar: " + (e && e.message)); }
+      },
+      (m) => { if (m && m.charAt(0) !== "⏳") showToast(m); }
+    );
+  }
   const categories = ["Todos", ...new Set(products.map(p=>p.category))];
 
   // Abre el editor de referencia (siempre con el grupo COMPLETO, sin filtros)
@@ -813,12 +951,41 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
       <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{ display:"none" }} />
+      {/* 📷 Escáner de código de barras de la etiqueta */}
+      {scanOpen && (
+        <ScanModal
+          onClose={() => setScanOpen(false)}
+          onScan={(code) => {
+            const p = buscarPorCodigo(products, code);
+            if (p) {
+              setSearch(p.sku);
+              setFilterCat("Todos");
+              setScanOpen(false);
+              showToast(`✅ ${p.name}${p.color ? " · " + p.color : ""}${p.size ? " · T" + p.size : ""} · SKU ${p.sku}`);
+              return null;
+            }
+            return `El código "${code}" no está en tu inventario`;
+          }}
+        />
+      )}
       {/* Search + controls */}
       <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
         <div style={{ position:"relative", flex:"1 1 240px" }}>
           <input className="stk-input" placeholder="🔍 Busca por nombre, color, talla, marca..." value={search} onChange={e=>setSearch(e.target.value)} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,fontWeight:900 }}>✕</button>}
         </div>
+        {/* 📷 Escanear código de barras de la etiqueta de la prenda */}
+        <button
+          onClick={() => setScanOpen(true)}
+          title="Escanear la etiqueta de la prenda con la cámara"
+          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
+        >📷 Escanear</button>
+        {/* ⬇️ Descargar todo el inventario en Excel */}
+        <button
+          onClick={descargarInventario}
+          title="Descargar todo el inventario en Excel (.xlsx)"
+          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
+        >⬇️ Descargar</button>
         {/* Menú desplegable "Vista" (ahorra espacio:3 vistas en1 botón) */}
         <div style={{ position:"relative", flexShrink:0 }}>
           <button
@@ -1467,7 +1634,7 @@ function EditReferenceModal({ group, onClose, onSave }) {
 
   const updVar = (i, key, val) => setVars(vs => vs.map((v, j) => (j === i ? { ...v, [key]: val } : v)));
   const addVar = () => setVars(vs => [...vs, {
-    id: newId(), name: group.name, sku: "", brand: rf.brand, color: "", size: "",
+    id: newId(), name: group.name, sku: "", barcode: "", brand: rf.brand, color: "", size: "",
     category: rf.category, stock: 0, minStock: 5, price: group.price || 0, cost: group.cost || 0,
     sold: 0, emoji: catEmoji[rf.category] || "📦", image: group.image || "",
   }]);
@@ -1531,6 +1698,7 @@ function EditReferenceModal({ group, onClose, onSave }) {
                     { k:"color",   ph:"Color",     v:v.color },
                     { k:"size",    ph:"Talla",     v:v.size },
                     { k:"sku",     ph:"SKU *",     v:v.sku },
+                    { k:"barcode", ph:"Código de barras", v:v.barcode },
                     { k:"stock",   ph:"Stock *",   v:v.stock,   type:"number" },
                     { k:"minStock",ph:"Mín",       v:v.minStock,type:"number" },
                     { k:"price",   ph:"Precio $",  v:v.price,   type:"number" },
@@ -1563,7 +1731,7 @@ function EditReferenceModal({ group, onClose, onSave }) {
 }
 
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
-  const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",category:"Ropa" });
+  const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",barcode:"",category:"Ropa" });
   const [image, setImage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
@@ -1595,7 +1763,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
         <div className="handle" />
         <div style={{ fontWeight:900,fontSize:20,marginBottom:20 }}>📦 Nuevo producto</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-          {[{label:"Nombre *",key:"name",ph:"Camiseta Básica",full:true},{label:"SKU *",key:"sku",ph:"CAM-001"},{label:"Marca",key:"brand",ph:"Nike"},{label:"Color",key:"color",ph:"Blanco"},{label:"Talla",key:"size",ph:"M / 42"},{label:"Stock *",key:"stock",ph:"0",type:"number"},{label:"Stock mínimo",key:"minStock",ph:"5",type:"number"},{label:"Precio ($)",key:"price",ph:"0",type:"number"},{label:"Costo ($)",key:"cost",ph:"0",type:"number"}].map(field=>(
+          {[{label:"Nombre *",key:"name",ph:"Camiseta Básica",full:true},{label:"SKU *",key:"sku",ph:"CAM-001"},{label:"Código de barras",key:"barcode",ph:"Ej: 7501234567890"},{label:"Marca",key:"brand",ph:"Nike"},{label:"Color",key:"color",ph:"Blanco"},{label:"Talla",key:"size",ph:"M / 42"},{label:"Stock *",key:"stock",ph:"0",type:"number"},{label:"Stock mínimo",key:"minStock",ph:"5",type:"number"},{label:"Precio ($)",key:"price",ph:"0",type:"number"},{label:"Costo ($)",key:"cost",ph:"0",type:"number"}].map(field=>(
             <div key={field.key} style={{ gridColumn:field.full?"span 2":"span 1" }}>
               <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>{field.label}</div>
               <input className="stk-input" type={field.type||"text"} placeholder={field.ph} value={f[field.key]} onChange={e=>setF(p=>({...p,[field.key]:e.target.value}))} />
@@ -1726,21 +1894,12 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const [subiendo,setSubiendo]=useState("");  // "📷 Subiendo fotos… 2/5"
   const fileRef=useRef();
   const fotosRef=useRef();
-  const xlsxOcupado=useRef(false);
   const PLANTILLA_HEADERS = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (foto o enlace)"];
   const PLANTILLA_EJEMPLO = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","camiseta.jpg"];
 
-  // Carga la librería XLSX solo si hace falta (compartida por importar y plantilla)
+  // Carga la librería XLSX solo si hace falta (compartida con "Descargar inventario")
   function cargarXLSX(msgCarga, msgFallo, cb) {
-    if (window.XLSX) { cb(); return; }
-    if (xlsxOcupado.current) return;
-    xlsxOcupado.current = true;
-    setError(msgCarga);
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-    s.onload = () => { xlsxOcupado.current = false; setError(""); cb(); };
-    s.onerror = () => { xlsxOcupado.current = false; setError(msgFallo); };
-    document.head.appendChild(s);
+    cargarScriptXLSX(msgCarga, msgFallo, cb, setError);
   }
 
   //1) Plantilla REAL de Excel (.xlsx) — columnas garantizadas en cualquier idioma de Excel

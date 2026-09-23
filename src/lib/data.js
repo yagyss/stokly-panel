@@ -111,6 +111,7 @@ export async function acceptPendingInvites(user) {
 export const productFromRow = (r) => ({
   id: String(r.id),
   addedAt: r.created_at ? String(r.created_at).slice(0, 10) : "",
+  barcode: r.barcode || "",
   name: r.name,
   sku: r.sku,
   brand: r.brand || "",
@@ -142,6 +143,7 @@ export const productToRow = (p, uid, ws) => ({
   cost: +p.cost || 0,
   sold: Math.round(+p.sold) || 0,
   emoji: p.emoji || "📦",
+  barcode: p.barcode || null,
   image_url: p.image || null,
 });
 
