@@ -305,9 +305,9 @@ export default function Stokly() {
   }, [workspaceId]);
 
   // Tablas conectadas a Supabase (carga + guardado automático, por panel)
-  const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow }, user?.id, workspaceId);
-  const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow     }, user?.id, workspaceId);
-  const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow  }, user?.id, workspaceId);
+  const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow, onError: (m) => showToast(m) }, user?.id, workspaceId);
+  const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow,     onError: (m) => showToast(m) }, user?.id, workspaceId);
+  const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow,  onError: (m) => showToast(m) }, user?.id, workspaceId);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
 
@@ -602,6 +602,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [photoTarget, setPhotoTarget] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [editGroup, setEditGroup] = useState(null); // referencia en edición (agregar tallas/colores)
   const fileRef = useRef(null);
 
   // Sube la foto de una referencia (carpeta = panel de trabajo)
@@ -640,6 +641,38 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
     showToast("🗑️ Inventario vaciado — empieza desde cero 🚀");
   };
   const categories = ["Todos", ...new Set(products.map(p=>p.category))];
+
+  // Abre el editor de referencia (siempre con el grupo COMPLETO, sin filtros)
+  const openEdit = (g) => {
+    const full = groupProducts(products).find(x => x.name === g.name && (x.brand || "") === (g.brand || "")) || g;
+    setEditGroup(full);
+  };
+  const openEditByVariant = (p) => {
+    const g = groupProducts(products).find(x => x.variants.some(v => String(v.id) === String(p.id)));
+    if (g) setEditGroup(g);
+  };
+  // Guarda la referencia: datos base a todas sus variantes, nuevas se agregan, quitadas se eliminan
+  const saveEdit = ({ refFields, vars }) => {
+    const oldName = editGroup.name, oldBrand = editGroup.brand || "";
+    setProducts(prev => {
+      const refOldIds = new Set(prev.filter(p => p.name === oldName && (p.brand || "") === oldBrand).map(p => String(p.id)));
+      const keptIds = new Set(vars.map(v => String(v.id)));
+      const removedIds = new Set([...refOldIds].filter(id => !keptIds.has(id)));
+      const existing = new Set(prev.map(p => String(p.id)));
+      const varMap = new Map(vars.map(v => [String(v.id), v]));
+      let next = prev.filter(p => !removedIds.has(String(p.id))).map(p => {
+        const id = String(p.id);
+        const nv = varMap.get(id);
+        if (nv) return { ...p, ...nv, name: refFields.name, brand: refFields.brand, category: refFields.category };
+        if (refOldIds.has(id)) return { ...p, name: refFields.name, brand: refFields.brand, category: refFields.category };
+        return p;
+      });
+      const news = vars.filter(v => !existing.has(String(v.id))).map(v => ({ ...v, name: refFields.name, brand: refFields.brand, category: refFields.category }));
+      return [...next, ...news];
+    });
+    setEditGroup(null);
+    showToast("✏️ Referencia actualizada");
+  };
   const q = search.toLowerCase();
   const filtered = products.filter(p =>
     (filterCat==="Todos" || p.category===filterCat) &&
@@ -751,10 +784,10 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                     >{uploading ? "⏳" : "📷"}</button>
                     <span style={{ fontSize:14, color:C.muted }}>{isExpanded?"▲":"▼"}</span>
                     <button
-                      onClick={e => { e.stopPropagation(); deleteGroup(group); }}
-                      title="Eliminar referencia (permanente)"
+                      onClick={e => { e.stopPropagation(); openEdit(group); }}
+                      title="Editar referencia — agregar tallas y colores"
                       style={{ background:"none", border:"none", cursor:"pointer", fontSize:14, padding:0, lineHeight:1, fontFamily:"inherit" }}
-                    >🗑️</button>
+                    >✏️</button>
                   </div>
                 </div>
 
@@ -794,7 +827,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                           </div>
                         );
                       })}
-                      <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
+                      <div style={{ display:"flex", justifyContent:"flex-end", gap:16, marginTop:10, flexWrap:"wrap" }}>
+                        <button onClick={()=>openEdit(group)} style={{ background:"none",border:"none",color:C.blue,fontSize:12,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>✏️ Editar referencia (agregar tallas/colores)</button>
                         <button onClick={()=>deleteGroup(group)} style={{ background:"none",border:"none",color:C.red,fontSize:12,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Eliminar referencia (permanente)</button>
                       </div>
                     </div>
@@ -835,7 +869,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   <div style={{ display:"flex", gap:6 }}>
                     <button className="stock-btn" onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock-1)}:x))}>−</button>
                     <button className="stock-btn" onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:x.stock+1}:x))}>+</button>
-                    <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar "${p.name}" (${p.color} · T${p.size})?\n\nSe borrará PERMANENTEMENTE.`)) return; setProducts(prev=>prev.filter(x=>x.id!==p.id)); showToast("🗑️ Eliminado"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+                    <button title="Editar referencia (agregar tallas/colores)" onClick={()=>openEditByVariant(p)} style={{ background:"none",border:"none",color:C.blue,cursor:"pointer",fontWeight:800,fontSize:12,fontFamily:"inherit" }}>✏️ Editar</button>
                   </div>
                 </div>
               </div>
@@ -881,7 +915,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                         <div style={{ display:"flex", gap:4 }}>
                           <button className="stock-btn" style={{ width:26, height:26, fontSize:13 }} onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock-1)}:x))}>−</button>
                           <button className="stock-btn" style={{ width:26, height:26, fontSize:13 }} onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,stock:x.stock+1}:x))}>+</button>
-                          <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar "${p.name}" (${p.color} · T${p.size})?\n\nSe borrará PERMANENTEMENTE.`)) return; setProducts(prev=>prev.filter(x=>x.id!==p.id)); showToast("🗑️ Eliminado"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"3px 7px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+                          <button title="Editar referencia (agregar tallas/colores)" onClick={()=>openEditByVariant(p)} style={{ background:"none",border:"none",color:C.blue,cursor:"pointer",fontWeight:800,fontSize:12,fontFamily:"inherit" }}>✏️ Editar</button>
                         </div>
                       </td>
                     </tr>
@@ -893,6 +927,9 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           </div>
         </div>
       )}
+
+      {/* Editor de referencia — agregar/quitar tallas y colores de la misma referencia */}
+      {editGroup && <EditReferenceModal group={editGroup} onClose={() => setEditGroup(null)} onSave={saveEdit} />}
     </div>
   );
 }
@@ -1263,10 +1300,114 @@ function OptionPickerModal({ title, subtitle, options, onClose }) {
   );
 }
 
+// Modal para editar una referencia: cambia datos base y agrega/quita tallas y colores
+function EditReferenceModal({ group, onClose, onSave }) {
+  const [rf, setRf] = useState({ name: group.name, brand: group.brand || "", category: group.category || "Otro" });
+  const [vars, setVars] = useState(() => group.variants.map(v => ({ ...v })));
+  const [err, setErr] = useState("");
+
+  const updVar = (i, key, val) => setVars(vs => vs.map((v, j) => (j === i ? { ...v, [key]: val } : v)));
+  const addVar = () => setVars(vs => [...vs, {
+    id: newId(), name: group.name, sku: "", brand: rf.brand, color: "", size: "",
+    category: rf.category, stock: 0, minStock: 5, price: group.price || 0, cost: group.cost || 0,
+    sold: 0, emoji: catEmoji[rf.category] || "📦", image: group.image || "",
+  }]);
+  const dropVar = (i) => setVars(vs => vs.filter((_, j) => j !== i));
+
+  function save() {
+    if (!rf.name.trim()) { setErr("El nombre de la referencia es obligatorio"); return; }
+    if (!vars.length) { setErr("Debe quedar al menos una variante"); return; }
+    const noSku = vars.findIndex(v => !String(v.sku || "").trim());
+    if (noSku >= 0) { setErr(`Falta el SKU de la variante ${noSku + 1} — toda variante necesita SKU único`); return; }
+    if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
+    setErr("");
+    onSave({ refFields: rf, vars });
+  }
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20 }}>✏️ Editar referencia</div>
+        <div style={{ fontSize:13, color:C.muted, fontWeight:700, marginBottom:18 }}>
+          {group.variants.length} variante{group.variants.length !== 1 ? "s" : ""} — agrega tallas y colores de la MISMA referencia
+        </div>
+
+        <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6, textTransform:"uppercase" }}>Datos de la referencia</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+          <div style={{ gridColumn:"span 2" }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Nombre *</div>
+            <input className="stk-input" value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder="Camiseta Básica" />
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Marca</div>
+            <input className="stk-input" value={rf.brand} onChange={e => setRf(p => ({ ...p, brand: e.target.value }))} placeholder="Nike" />
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Categoría</div>
+            <select className="stk-input" value={rf.category} onChange={e => setRf(p => ({ ...p, category: e.target.value }))}>
+              {["Ropa","Calzado","Accesorios","Otro"].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase" }}>Variantes ({vars.length})</div>
+          <button className="filter-btn" onClick={addVar}>➕ Agregar talla/color</button>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+          {vars.map((v, i) => {
+            const isNew = !group.variants.some(gv => String(gv.id) === String(v.id));
+            return (
+              <div key={v.id} style={{ background:C.bg, border:`1.5px solid ${isNew ? C.green : C.border}`, borderRadius:14, padding:"10px 12px" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                  <span style={{ fontSize:11, fontWeight:900, color:isNew ? C.green : C.muted }}>
+                    {isNew ? "✨ Nueva variante" : `Variante ${i + 1}`}
+                  </span>
+                  <button onClick={() => dropVar(i)} style={{ background:"none", border:"none", color:C.red, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>✕ Quitar</button>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(92px, 1fr))", gap:8 }}>
+                  {[
+                    { k:"color",   ph:"Color",     v:v.color },
+                    { k:"size",    ph:"Talla",     v:v.size },
+                    { k:"sku",     ph:"SKU *",     v:v.sku },
+                    { k:"stock",   ph:"Stock *",   v:v.stock,   type:"number" },
+                    { k:"minStock",ph:"Mín",       v:v.minStock,type:"number" },
+                    { k:"price",   ph:"Precio $",  v:v.price,   type:"number" },
+                    { k:"cost",    ph:"Costo $",   v:v.cost,    type:"number" },
+                  ].map(fd => (
+                    <div key={fd.k}>
+                      <input
+                        className="stk-input"
+                        type={fd.type || "text"}
+                        placeholder={fd.ph}
+                        value={fd.v == null ? "" : fd.v}
+                        onChange={e => updVar(i, fd.k, fd.type === "number" ? (e.target.value === "" ? "" : +e.target.value) : e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {err && <div style={{ marginBottom:12, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
+        <div style={{ display:"flex", gap:10 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
+          <button className="btn-main" onClick={save} style={{ flex:2 }}>Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",category:"Ropa" });
   const [image, setImage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
   const photoRef = useRef(null);
 
   async function pickPhoto(e) {
@@ -1280,7 +1421,13 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   }
 
   function save() {
-    if (!f.name||!f.sku||!f.stock || uploading) return;
+    if (uploading) { setErr("⏳ Espera a que termine de subir la foto"); return; }
+    const miss = [];
+    if (!f.name.trim()) miss.push("Nombre");
+    if (!f.sku.trim()) miss.push("SKU");
+    if (f.stock === "" || f.stock == null) miss.push("Stock");
+    if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
+    setErr("");
     onSave({ ...f, id:newId(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦", image });
   }
   return (
@@ -1317,6 +1464,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
             )}
           </div>
         </div>
+        {err && <div style={{ marginBottom:12, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
         <div style={{ display:"flex",gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
           <button className="btn-main" onClick={save} disabled={uploading} style={{ flex:2, opacity:uploading?0.6:1 }}>Guardar producto</button>
@@ -1405,9 +1553,18 @@ function ImportModal({ onClose, onImport, importView="file" }) {
   function processFile(file) {
     if(!file)return; setFileName(file.name); setError("");
     if(file.name.match(/\.xlsx?$/i)) {
-      const r=new FileReader();
-      r.onload=e=>{try{const X=window.XLSX;if(!X){setError("Cargando... intenta de nuevo");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa los encabezados.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
-      r.readAsArrayBuffer(file);
+      const run=()=>{const r=new FileReader();
+        r.onload=e=>{try{const X=window.XLSX;if(!X){setError("El lector de Excel no cargó. Revisa tu conexión y vuelve a elegir el archivo.");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa los encabezados.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
+        r.readAsArrayBuffer(file);};
+      if(window.XLSX){run();}
+      else{
+        setError("⏳ Cargando lector de Excel…");
+        const s=document.createElement("script");
+        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        s.onload=()=>{setError("");run();};
+        s.onerror=()=>setError("No se pudo cargar el lector de Excel. Revisa tu conexión e inténtalo otra vez.");
+        document.head.appendChild(s);
+      }
     } else if(file.name.match(/\.(csv|tsv|txt)$/i)) {
       const r=new FileReader(); r.onload=e=>{const p=parseCSV(e.target.result);if(!p.length){setError("Sin productos.");return;}setParsed(p);setStep("preview");};r.readAsText(file,"UTF-8");
     } else setError("Usa .xlsx o .csv");

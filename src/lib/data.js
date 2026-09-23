@@ -190,7 +190,7 @@ export const expenseToRow = (e, uid, ws) => ({
 //  · cada cambio local se calcula (altas / bajas / cambios)
 //    y se guarda en Supabase en segundo plano
 // ══════════════════════════════════════════════════════════════
-export function useSyncedTable(table, { fromRow, toRow }, userId, workspaceId) {
+export function useSyncedTable(table, { fromRow, toRow, onError }, userId, workspaceId) {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState(userId && workspaceId ? "loading" : "idle");
   const ref = useRef([]);
@@ -257,6 +257,7 @@ export function useSyncedTable(table, { fromRow, toRow }, userId, workspaceId) {
       }
     } catch (err) {
       console.error("[stokly] sync " + table + ":", err.message || err);
+      if (typeof onError === "function") onError("❌ No se pudo guardar en la nube — revisa tu conexión e inténtalo de nuevo.");
     }
   }
 
