@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { uploadProductImage } from "./lib/image.js";
+import { supabase } from "./lib/supabase.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
 import {
@@ -144,6 +145,24 @@ const normalizarFotoURL = (v) => {
   if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
   return s;
 };
+
+// 📸 Varias fotos por color — se guardan juntas en image separadas por "||"
+const imgsDe = (v) => String(v || "").split("||").map(s => s.trim()).filter(Boolean);
+const juntarImgs = (arr) => [...new Set(arr.map(s => String(s).trim()).filter(Boolean))].join("||");
+const primeraImg = (v) => imgsDe(v)[0] || "";
+
+// Carga perezosa de JsBarcode — solo cuando abres el generador de etiquetas
+let jsbCargas = null;
+function cargarJsBarcode(ok, fail) {
+  if (window.JsBarcode) { ok(); return; }
+  if (jsbCargas) { jsbCargas.push({ ok, fail }); return; }
+  jsbCargas = [{ ok, fail }];
+  const s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js";
+  s.onload = () => { const l = jsbCargas || []; jsbCargas = null; l.forEach(x => x.ok()); };
+  s.onerror = () => { const l = jsbCargas || []; jsbCargas = null; l.forEach(x => x.fail()); };
+  document.head.appendChild(s);
+}
 
 // Carga perezosa de SheetJS — compartida por ImportModal y "Descargar inventario"
 let xlsxCargas = null;
@@ -344,6 +363,331 @@ function ScanModal({ onClose, onScan }) {
   );
 }
 
+// ── 📤 COMPARTIR CATÁLOGO (link público para WhatsApp — sin iniciar sesión) ──
+function ShareModal({ workspaceId, sizes, onClose, showToast }) {
+  const [modo, setModo] = useState("todo"); // todo | talla
+  const [talla, setTalla] = useState(sizes[0] || "");
+  useEffect(() => { if (modo === "talla" && !talla && sizes.length) setTalla(sizes[0]); }, [modo, sizes, talla]);
+  const base = `${window.location.origin}${window.location.pathname}#/catalogo?ws=${encodeURIComponent(workspaceId || "")}`;
+  const link = base + (modo === "talla" && talla ? `&talla=${encodeURIComponent(talla)}` : "");
+  const msg = modo === "talla" && talla
+    ? `🛍️ Mira nuestro catálogo — prendas disponibles en talla ${talla}:\n${link}`
+    : `🛍️ Mira nuestro catálogo completo:\n${link}`;
+  async function copiar() {
+    try { await navigator.clipboard.writeText(msg); showToast("📋 Link copiado — pégalo en WhatsApp"); }
+    catch (e) {
+      try {
+        const ta = document.createElement("textarea"); ta.value = msg;
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+        showToast("📋 Link copiado — pégalo en WhatsApp");
+      } catch (e2) { showToast("❌ No se pudo copiar — selecciona el link y cópialo"); }
+    }
+  }
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>📤 Compartir catálogo</div>
+        <div style={{ fontSize:13, color:C.muted, fontWeight:600, marginBottom:16, lineHeight:1.5 }}>
+          Cualquiera con el link ve tu catálogo <b>sin iniciar sesión</b>. Nunca se muestran costos ni datos internos.
+        </div>
+        <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+          {[
+            { id:"todo",  label:"📚 Catálogo completo", desc:"Todas las prendas y tallas" },
+            { id:"talla", label:"📏 Solo una talla",    desc:"Ej: lo disponible en talla 4" },
+          ].map(o => (
+            <button key={o.id} onClick={() => setModo(o.id)} style={{ flex:1, background:modo===o.id?C.greenLight:C.bg, border:`2px solid ${modo===o.id?C.green:C.border}`, borderRadius:14, padding:"12px 10px", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+              <div style={{ fontWeight:900, fontSize:13, color:modo===o.id?C.green:C.text }}>{o.label}</div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>{o.desc}</div>
+            </button>
+          ))}
+        </div>
+        {modo === "talla" && (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>Talla a compartir</div>
+            <select className="stk-input" value={talla} onChange={e => setTalla(e.target.value)}>
+              {!sizes.length && <option value="">(aún no tienes tallas registradas)</option>}
+              {sizes.map(s => <option key={s} value={s}>Talla {s}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ background:C.blueLight, borderRadius:14, padding:"12px 14px", marginBottom:14, wordBreak:"break-all" }}>
+          <div style={{ fontSize:10.5, fontWeight:900, color:C.blue, textTransform:"uppercase", marginBottom:4 }}>Tu link</div>
+          <div style={{ fontSize:12.5, fontWeight:700, color:C.text, lineHeight:1.55 }}>{link}</div>
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
+          <button className="btn-main" onClick={copiar} style={{ flex:1 }}>📋 Copiar link</button>
+        </div>
+        <button
+          onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank")}
+          style={{ width:"100%", marginTop:10, background:"#25D366", color:"white", border:"none", borderRadius:14, padding:"13px 16px", fontWeight:900, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}
+        >💬 Compartir por WhatsApp</button>
+      </div>
+    </div>
+  );
+}
+
+// ── 🏷️ ETIQUETAS imprimibles con código de barras ────────────────────────────
+function Etiqueta({ p }) {
+  const code = String((p.barcode || p.sku || "").trim());
+  return (
+    <div className="etq">
+      <div className="etq-n">{p.name}</div>
+      <div className="etq-c">{[p.color, p.size ? "T" + p.size : ""].filter(Boolean).join(" · ") || "—"}</div>
+      <svg data-cod={code} />
+      <div className="etq-s">{code}</div>
+    </div>
+  );
+}
+
+function LabelsModal({ products, onClose, showToast }) {
+  const [sel, setSel] = useState(() => new Set());
+  const [b, setB] = useState("");
+  const [listo, setListo] = useState(!!window.JsBarcode);
+  const [fallos, setFallos] = useState(0);
+
+  useEffect(() => {
+    if (window.JsBarcode) { setListo(true); return; }
+    cargarJsBarcode(() => setListo(true), () => showToast("❌ No se pudo cargar el generador de etiquetas — revisa tu conexión"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Dibuja los códigos (vista previa + hoja de impresión)
+  useEffect(() => {
+    if (!listo) return;
+    let fallosN = 0;
+    document.querySelectorAll("svg[data-cod]").forEach(svg => {
+      const code = (svg.getAttribute("data-cod") || "").trim();
+      if (!code) return;
+      try {
+        window.JsBarcode(svg, code, { format:"CODE128", displayValue:false, height:38, width:2, margin:2, background:"transparent", lineColor:"#000000" });
+        if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", `0 0 ${svg.getAttribute("width")} ${svg.getAttribute("height")}`);
+      } catch (e) { fallosN++; }
+    });
+    setFallos(fallosN);
+  }, [listo, sel]);
+
+  const q = b.toLowerCase().trim();
+  const lista = products.filter(p => !q || [p.name, p.sku, p.color, p.size, p.brand].some(x => String(x || "").toLowerCase().includes(q)));
+  const toggle = (id) => setSel(s => { const n = new Set(s); const k = String(id); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const seleccionados = products.filter(p => sel.has(String(p.id)));
+  const algunosVisibles = lista.some(p => sel.has(String(p.id)));
+  const alternarVisibles = () => setSel(s => {
+    const n = new Set(s);
+    const marcar = !algunosVisibles;
+    lista.forEach(p => { if (marcar) n.add(String(p.id)); else n.delete(String(p.id)); });
+    return n;
+  });
+  const imprimir = () => { if (sel.size && listo) window.print(); };
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>🏷️ Etiquetas con código de barras</div>
+        <div style={{ fontSize:13, color:C.muted, fontWeight:600, marginBottom:14, lineHeight:1.5 }}>
+          Marca las prendas y imprime sus etiquetas para poder escanearlas con el 📷 de stokly.
+        </div>
+        <input className="stk-input" placeholder="🔍 Busca la prenda (nombre, talla, SKU…)" value={b} onChange={e => setB(e.target.value)} style={{ marginBottom:10 }} />
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:8, flexWrap:"wrap" }}>
+          <span style={{ fontSize:12.5, fontWeight:900 }}>{sel.size} seleccionada{sel.size === 1 ? "" : "s"}</span>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="filter-btn" onClick={alternarVisibles}>{algunosVisibles ? "✕ Quitar visibles" : "☑️ Seleccionar visibles"}</button>
+            {sel.size > 0 && <button className="filter-btn" onClick={() => setSel(new Set())}>Limpiar</button>}
+          </div>
+        </div>
+        <div className="card" style={{ padding:"4px 14px", maxHeight:210, overflowY:"auto", marginBottom:12 }}>
+          {lista.map(p => (
+            <label key={p.id} className="row-item" style={{ cursor:"pointer" }}>
+              <input type="checkbox" checked={sel.has(String(p.id))} onChange={() => toggle(p.id)} style={{ width:18, height:18, accentColor:"#00C896" }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:800, fontSize:13.5 }}>{p.emoji} {p.name}</div>
+                <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.color} · T{p.size} · {p.sku}</div>
+              </div>
+            </label>
+          ))}
+          {!lista.length && <div style={{ textAlign:"center", padding:24, color:C.muted, fontWeight:700 }}>Sin resultados 🔍</div>}
+        </div>
+        {seleccionados[0] && (
+          <div style={{ background:C.bg, borderRadius:14, padding:"12px 14px", marginBottom:12, display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
+            <div>
+              <div style={{ fontSize:10.5, fontWeight:900, color:C.muted, textTransform:"uppercase", marginBottom:8 }}>Vista previa</div>
+              <Etiqueta p={seleccionados[0]} />
+            </div>
+            <div style={{ fontSize:12, color:C.muted, fontWeight:700, lineHeight:1.6, flex:1, minWidth:150 }}>
+              🖨️ Se imprimirán <b style={{ color:C.text }}>{sel.size}</b> etiqueta{sel.size === 1 ? "" : "s"} de52×34 mm.<br />
+              Coloca papel carta o A4 — se acomodan solas.
+            </div>
+          </div>
+        )}
+        {fallos > 0 && <div style={{ background:C.yellowLight, color:"#B54708", borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⚠️ {fallos} código(s) tienen caracteres especiales — abajo del código se imprime el número igual</div>}
+        {!listo && <div style={{ background:C.blueLight, color:C.blue, borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⏳ Cargando el generador de códigos…</div>}
+        <div style={{ display:"flex", gap:10 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cerrar</button>
+          <button className="btn-main" onClick={imprimir} disabled={!sel.size || !listo} style={{ flex:2, opacity:!sel.size || !listo ? 0.6 : 1 }}>🖨️ Imprimir {sel.size || ""}</button>
+        </div>
+        {/* Hoja de impresión: oculta en pantalla, visible solo al imprimir */}
+        <div id="stokly-print">
+          {seleccionados.map(p => <Etiqueta key={p.id} p={p} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 📲 CATÁLOGO PÚBLICO — se ve con el link, sin iniciar sesión ──────────────
+function PublicCatalog() {
+  const qs = (() => {
+    const h = window.location.hash.replace(/^#\/catalogo/, "");
+    return new URLSearchParams(h.startsWith("?") ? h.slice(1) : h);
+  })();
+  const ws = qs.get("ws") || "";
+  const [items, setItems] = useState(undefined); // undefined = cargando
+  const [talla, setTalla] = useState(qs.get("talla") || "");
+  const [q, setQ] = useState("");
+  const [foto, setFoto] = useState(null);        // { imgs:[], i }
+
+  useEffect(() => {
+    if (!ws) { setItems([]); return; }
+    let vivo = true;
+    supabase.from("catalogo").select("*").eq("workspace_id", ws)
+      .then(({ data, error }) => {
+        if (!vivo) return;
+        if (error) { console.error("[stokly] catálogo:", error.message); setItems([]); }
+        else setItems(data || []);
+      });
+    return () => { vivo = false; };
+  }, [ws]);
+
+  // Agrupa las variantes por referencia + color (una tarjeta por prenda/color)
+  const filas = (items || []).map(r => productFromRow(r));
+  const grupos = [];
+  const idx = {};
+  filas.forEach(p => {
+    const k = `${p.name}__${p.brand}__${p.color}`;
+    if (!idx[k]) { idx[k] = { key:k, name:p.name, brand:p.brand, color:p.color, emoji:p.emoji, price:p.price, imgs:[], tallas:[] }; grupos.push(idx[k]); }
+    const g = idx[k];
+    imgsDe(p.image).forEach(u => { if (!g.imgs.includes(u)) g.imgs.push(u); });
+    if (!g.price) g.price = p.price;
+    g.tallas.push({ size:p.size, stock:p.stock });
+  });
+  const ordenarTallas = (ts) => {
+    const m = {};
+    ts.forEach(t => { const s = String(t.size || ""); if (!s) return; m[s] = (m[s] || 0) + (t.stock || 0); });
+    return Object.entries(m).map(([size, stock]) => ({ size, stock })).sort((a, b) => a.size.localeCompare(b.size, "es", { numeric:true }));
+  };
+  const tallasDisponibles = [...new Set(filas.map(p => String(p.size || "")).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es", { numeric:true }));
+  const visibles = grupos.filter(g =>
+    (!talla || g.tallas.some(t => String(t.size) === talla)) &&
+    (!q || [g.name, g.brand, g.color].some(x => String(x || "").toLowerCase().includes(q.toLowerCase())))
+  ).sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito','Segoe UI',sans-serif" }}>
+      <style>{STYLES}</style>
+
+      {/* Encabezado */}
+      <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", padding:"26px 16px 22px", color:"white" }}>
+        <div style={{ maxWidth:980, margin:"0 auto" }}>
+          <div style={{ fontSize:13, fontWeight:800, opacity:.85 }}>stokly 📦</div>
+          <div style={{ fontSize:26, fontWeight:900, marginTop:2 }}>🛍️ Catálogo</div>
+          <div style={{ fontSize:13, fontWeight:600, opacity:.9, marginTop:4 }}>Elige tu talla y descubre cada prenda</div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:980, margin:"0 auto", padding:"16px 14px 6px" }}>
+        {/* Búsqueda + tallas */}
+        <input className="stk-input" placeholder="🔍 Busca prenda, color, marca…" value={q} onChange={e => setQ(e.target.value)} style={{ marginBottom:10 }} />
+        <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:6 }}>
+          <button className={`filter-btn ${talla === "" ? "active" : ""}`} onClick={() => setTalla("")} style={{ flexShrink:0 }}>Todas</button>
+          {tallasDisponibles.map(s => (
+            <button key={s} className={`filter-btn ${talla === s ? "active" : ""}`} onClick={() => setTalla(s)} style={{ flexShrink:0 }}>Talla {s}</button>
+          ))}
+        </div>
+        {talla && (
+          <div style={{ background:C.blueLight, borderRadius:12, padding:"9px 14px", fontSize:13, fontWeight:800, color:C.blue, marginTop:6 }}>
+            📏 Mostrando prendas disponibles en talla {talla} · {visibles.length} prenda{visibles.length === 1 ? "" : "s"}
+          </div>
+        )}
+      </div>
+
+      {/* Estado de carga / error */}
+      {items === undefined && (
+        <div style={{ textAlign:"center", padding:"60px 20px", color:C.muted, fontWeight:800, fontSize:15 }}>⏳ Cargando catálogo…</div>
+      )}
+      {items !== undefined && !items.length && (
+        <div style={{ textAlign:"center", padding:"50px 20px" }}>
+          <div style={{ fontSize:40, marginBottom:8 }}>😕</div>
+          <div style={{ fontWeight:900, fontSize:16, marginBottom:6 }}>No encontramos ese catálogo</div>
+          <div style={{ fontSize:13, color:C.muted, fontWeight:600, lineHeight:1.6 }}>Pide el link actualizado a la tienda<br />o vuelve a intentarlo en unos minutos.</div>
+        </div>
+      )}
+
+      {/* Tarjetas */}
+      {visibles.length > 0 && (
+        <div style={{ maxWidth:980, margin:"0 auto", padding:"10px 14px 4px", display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(235px, 1fr))", gap:16 }}>
+          {visibles.map(g => (
+            <div key={g.key} className="card" style={{ overflow:"hidden" }}>
+              {g.imgs.length ? (
+                <div onClick={() => setFoto({ imgs:g.imgs, i:0 })} style={{ position:"relative", cursor:"zoom-in", height:175, background:C.bg }}>
+                  <img src={g.imgs[0]} alt={g.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  {g.imgs.length > 1 && <span style={{ position:"absolute", top:8, right:8, background:"rgba(0,0,0,.6)", color:"white", borderRadius:20, padding:"3px 9px", fontSize:11, fontWeight:800 }}>📷 {g.imgs.length}</span>}
+                </div>
+              ) : (
+                <div style={{ height:110, display:"flex", alignItems:"center", justifyContent:"center", fontSize:44, background:C.bg }}>{g.emoji}</div>
+              )}
+              <div style={{ padding:"12px 14px 14px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"flex-start" }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontWeight:900, fontSize:15 }}>{g.name}</div>
+                    <div style={{ fontSize:12, color:C.muted, fontWeight:700 }}>{[g.brand, g.color].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <div style={{ fontWeight:900, fontSize:15, color:C.green, whiteSpace:"nowrap" }}>{fmt(g.price)}</div>
+                </div>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:10 }}>
+                  {ordenarTallas(g.tallas).map(t => (
+                    <span key={t.size} style={{ fontSize:11.5, fontWeight:800, borderRadius:9, padding:"4px 9px", background:t.stock > 0 ? C.greenLight : C.bg, color:t.stock > 0 ? C.green : C.muted, border:`1.5px solid ${t.stock > 0 ? C.green + "80" : C.border}` }}>
+                      T{t.size}{t.stock <= 0 ? " · Agotado" : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {items !== undefined && items.length > 0 && visibles.length === 0 && (
+        <div style={{ textAlign:"center", padding:"40px 20px", color:C.muted, fontWeight:800 }}>😕 Nada coincide con ese filtro</div>
+      )}
+
+      {/* Pie */}
+      <div style={{ textAlign:"center", padding:"24px 16px 40px", fontSize:12.5, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
+        Hecho con 🧡 stokly<br />
+        <button
+          onClick={() => { window.location.href = window.location.origin + window.location.pathname; }}
+          style={{ marginTop:8, background:"white", border:"1.5px solid "+C.border, borderRadius:12, padding:"9px 16px", fontWeight:800, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}
+        >¿Eres la tienda? Inicia sesión</button>
+      </div>
+
+      {/* Visor de fotos */}
+      {foto && (
+        <div onClick={() => setFoto(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.93)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <img src={foto.imgs[foto.i]} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:"100%", maxHeight:"76vh", borderRadius:14, objectFit:"contain" }} />
+          {foto.imgs.length > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); setFoto(f => ({ ...f, i:(f.i - 1 + f.imgs.length) % f.imgs.length })); }} style={{ position:"fixed", left:10, top:"50%", transform:"translateY(-50%)", width:44, height:44, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:24, cursor:"pointer", fontFamily:"inherit" }}>‹</button>
+              <button onClick={e => { e.stopPropagation(); setFoto(f => ({ ...f, i:(f.i + 1) % f.imgs.length })); }} style={{ position:"fixed", right:10, top:"50%", transform:"translateY(-50%)", width:44, height:44, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:24, cursor:"pointer", fontFamily:"inherit" }}>›</button>
+              <div onClick={e => e.stopPropagation()} style={{ position:"fixed", bottom:26, left:"50%", transform:"translateX(-50%)", color:"white", fontWeight:800, fontSize:13, background:"rgba(0,0,0,.55)", borderRadius:20, padding:"6px 14px" }}>{foto.i + 1} / {foto.imgs.length}</div>
+            </>
+          )}
+          <button onClick={e => { e.stopPropagation(); setFoto(null); }} style={{ position:"fixed", top:14, right:14, width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:18, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Grotesk:wght@600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -435,6 +779,20 @@ const STYLES = `
   @media (min-width: 1024px) {
     .sidebar { width: 260px; }
     .grid-4 { grid-template-columns: repeat(4,1fr); }
+  }
+
+  /* ── 🏷️ Etiquetas imprimibles con código de barras ── */
+  .etq { width: 52mm; height: 34mm; background: #fff; border: 0.4mm solid #D0D5DD; border-radius: 2.5mm; padding: 2.5mm 3mm; display: flex; flex-direction: column; gap: 0.8mm; box-sizing: border-box; overflow: hidden; flex-shrink: 0; }
+  .etq-n { font-size: 9.5pt; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
+  .etq-c { font-size: 7.5pt; color: #475467; font-weight: 700; white-space: nowrap; overflow: hidden; }
+  .etq svg { width: 100%; height: 11mm; }
+  .etq-s { font-size: 7pt; font-weight: 800; text-align: center; letter-spacing: 0.6px; margin-top: auto; color: #000; }
+  #stokly-print { position: fixed; left: -10000px; top: 0; }
+  @media print {
+    body * { visibility: hidden !important; }
+    #stokly-print, #stokly-print * { visibility: visible !important; }
+    #stokly-print { position: absolute !important; left: 0 !important; top: 0 !important; width: 100%; padding: 6mm; display: flex; flex-wrap: wrap; gap: 3mm; background: #fff; }
+    .etq { page-break-inside: avoid; }
   }
 `;
 
@@ -551,6 +909,11 @@ export default function Stokly() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, mStatus]);
 
+  // 📲 Catálogo PÚBLICO — cualquiera con el link lo ve sin iniciar sesión
+  if (typeof window !== "undefined" && window.location.hash.startsWith("#/catalogo")) {
+    return <PublicCatalog />;
+  }
+
   // Pantalla de carga / login
   if (initializing) return <Splash text="Cargando stokly…" />;
   if (!user) return <AuthScreen />;
@@ -658,12 +1021,12 @@ export default function Stokly() {
 
         {/* Page content */}
         <div className="page-content">
-          {tab==="home"      && <Home      products={products} sales={sales} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
+          {tab==="home"      && <Home      products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
           {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} workspaceId={workspaceId} />}
           {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
-          {tab==="metrics"   && <Metrics   products={products} sales={sales} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
+          {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
         </div>
       </div>
 
@@ -731,16 +1094,26 @@ export default function Stokly() {
 }
 
 // ── HOME ──────────────────────────────────────────────────────────────────────
-function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, setModal, isMobile }) {
-  const top5 = [...products].sort((a,b)=>b.sold-a.sold).slice(0,5);
+function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lowStock, setTab, setModal, isMobile }) {
+  const [rango, setRango] = useState({ id:"todo" });
+  const sF = sales.filter(s => enRango(s.date, rango));
+  const eF = expenses.filter(e => solapaRango(e, rango));
+  const totalSR = sF.reduce((a,s) => a + s.total, 0);
+  const totalER = eF.reduce((a,e) => a + e.amount, 0);
+  const profitR = totalSR - totalER;
+  const unidadesR = {};
+  sF.forEach(s => { unidadesR[s.productId] = (unidadesR[s.productId] || 0) + (s.qty || 0); });
+  const vendidos = (p) => rango.id === "todo" ? (p.sold || 0) : (unidadesR[p.id] || 0);
+  const top5 = [...products].sort((a,b) => vendidos(b) - vendidos(a)).slice(0,5);
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+      <DateRangeFilter rango={rango} onChange={setRango} />
       {/* Hero card */}
       <div style={{ background:"linear-gradient(135deg,#00C896 0%,#4A90FF 100%)", borderRadius:24, padding:isMobile?22:28, color:"white" }}>
-        <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:4 }}>Ganancia neta del mes</div>
-        <div style={{ fontSize:isMobile?36:48, fontWeight:900, marginBottom:16 }}>{fmt(profit)}</div>
+        <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:4 }}>{rango.id==="todo" ? "Ganancia neta del mes" : "Ganancia · " + rangoLabel(rango)}</div>
+        <div style={{ fontSize:isMobile?36:48, fontWeight:900, marginBottom:16 }}>{fmt(profitR)}</div>
         <div className="grid-2" style={{ maxWidth:480 }}>
-          {[["VENTAS",totalSales],[" GASTOS",totalExpenses]].map(([l,v])=>(
+          {[["VENTAS",totalSR],[" GASTOS",totalER]].map(([l,v])=>(
             <div key={l} style={{ background:"rgba(255,255,255,0.18)", borderRadius:14, padding:"12px 16px" }}>
               <div style={{ fontSize:10, fontWeight:700, opacity:0.8, marginBottom:4 }}>{l}</div>
               <div style={{ fontSize:isMobile?18:22, fontWeight:900 }}>{fmt(v)}</div>
@@ -754,7 +1127,7 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
         {[
           { label:"Unidades en stock", value:products.reduce((a,p)=>a+p.stock,0), color:C.blue,   bg:C.blueLight,   emoji:"📦" },
           { label:"Referencias",       value:products.length,                      color:C.purple, bg:C.purpleLight, emoji:"🏷️" },
-          { label:"Ventas registradas",value:products.reduce((a,p)=>a+p.sold,0),  color:C.green,  bg:C.greenLight,  emoji:"💰" },
+          { label: rango.id==="todo" ? "Ventas registradas" : "Vendidas en el rango", value: rango.id==="todo" ? products.reduce((a,p)=>a+p.sold,0) : sF.reduce((a,s)=>a+s.qty,0), color:C.green,  bg:C.greenLight,  emoji:"💰" },
           { label:"Alertas de stock",  value:lowStock.length,                      color:lowStock.length?C.red:C.green, bg:lowStock.length?C.redLight:C.greenLight, emoji:"⚠️" },
         ].map(k=>(
           <div key={k.label} className="stat-card" style={{ background:k.bg }}>
@@ -816,8 +1189,8 @@ function Home({ products, totalSales, totalExpenses, profit, lowStock, setTab, s
                 <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.brand} · {p.color} · T{p.size}</div>
               </div>
               <div style={{ textAlign:"right" }}>
-                <div style={{ fontWeight:900, fontSize:15, color:C.green }}>{p.sold}</div>
-                <div style={{ fontSize:10, color:C.muted }}>vendidos</div>
+                <div style={{ fontWeight:900, fontSize:15, color:C.green }}>{vendidos(p)}</div>
+                <div style={{ fontSize:10, color:C.muted }}>{rango.id==="todo" ? "vendidos" : "uds en rango"}</div>
               </div>
             </div>
           ))}
@@ -838,19 +1211,27 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   const [uploading, setUploading] = useState(false);
   const [editGroup, setEditGroup] = useState(null); // referencia en edición (agregar tallas/colores)
   const [scanOpen, setScanOpen] = useState(false);   // escáner de código de barras
+  const [rango, setRango] = useState({ id:"todo" }); // fecha en que se AGREGÓ el producto
+  const [filterSize, setFilterSize] = useState("Todas"); // filtro de talla
+  const [shareOpen, setShareOpen] = useState(false); // compartir catálogo (link/WhatsApp)
+  const [labelsOpen, setLabelsOpen] = useState(false); // imprimir etiquetas con código de barras
   const fileRef = useRef(null);
 
-  // Sube la foto de una referencia (carpeta = panel de trabajo)
+  // 📸 Sube fotos al COLOR elegido de una referencia (agrega, no reemplaza)
   async function handlePhoto(e) {
-    const file = e.target.files && e.target.files[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!file || !photoTarget) return;
+    if (!files.length || !photoTarget) return;
     setUploading(true);
     try {
-      const url = await uploadProductImage(file, workspaceId);
-      const ids = new Set(photoTarget.variants.map(v => String(v.id)));
-      setProducts(prev => prev.map(x => ids.has(String(x.id)) ? { ...x, image: url } : x));
-      showToast("📷 Foto de referencia actualizada");
+      const nuevas = [];
+      for (const f of files) { nuevas.push(await uploadProductImage(f, workspaceId)); }
+      const ids = new Set(photoTarget.ids.map(x => String(x)));
+      setProducts(prev => prev.map(x => {
+        if (!ids.has(String(x.id))) return x;
+        return { ...x, image: juntarImgs([...imgsDe(x.image), ...nuevas]) };
+      }));
+      showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""} al color`);
     } catch (err) {
       console.error("[stokly] foto:", err && err.message);
       showToast("❌ No se pudo subir la foto");
@@ -858,6 +1239,14 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       setUploading(false);
     }
   }
+
+  // Quita una foto del color elegido (todas sus variantes)
+  const quitarFoto = (variants, url) => {
+    if (!window.confirm("¿Quitar esta foto del color?")) return;
+    const ids = new Set(variants.map(v => String(v.id)));
+    setProducts(prev => prev.map(x => ids.has(String(x.id)) ? { ...x, image: juntarImgs(imgsDe(x.image).filter(u => u !== url)) } : x));
+    showToast("🗑️ Foto quitada");
+  };
 
   // Borrado permanente de una referencia (todas sus variantes)
   const deleteGroup = (group) => {
@@ -909,6 +1298,9 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
     );
   }
   const categories = ["Todos", ...new Set(products.map(p=>p.category))];
+  // Tallas distintas del inventario (orden:2,4,10… y luego letras)
+  const sizes = [...new Set(products.map(p => String(p.size || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es", { numeric:true }));
 
   // Abre el editor de referencia (siempre con el grupo COMPLETO, sin filtros)
   const openEdit = (g) => {
@@ -941,16 +1333,26 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
     setEditGroup(null);
     showToast("✏️ Referencia actualizada");
   };
-  const q = search.toLowerCase();
-  const filtered = products.filter(p =>
-    (filterCat==="Todos" || p.category===filterCat) &&
-    (!q || p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
-  );
+  // 🔎 Búsqueda: acepta "talla4", "talla 4", "4" o cualquier combinación de
+  //    nombre + color + marca + talla + SKU (todas las palabras deben coincidir)
+  const q = search.toLowerCase().trim();
+  let palabras = q.split(/\s+/).filter(Boolean);
+  let soloTalla = false;
+  if (palabras.length && /^(talla|tallas|t|size)$/.test(palabras[0])) { soloTalla = true; palabras = palabras.slice(1); }
+  const filtered = products.filter(p => {
+    if (filterCat !== "Todos" && p.category !== filterCat) return false;
+    if (filterSize !== "Todas" && String(p.size || "") !== filterSize) return false;
+    if (rango.id !== "todo" && p.addedAt && !enRango(p.addedAt, rango)) return false;
+    if (!palabras.length) return true;
+    if (soloTalla) return String(p.size || "").toLowerCase().includes(palabras.join(" "));
+    const campos = [p.name, p.brand, p.color, p.size, p.sku, p.category].map(x => String(x || "").toLowerCase());
+    return palabras.every(w => campos.some(c => c.includes(w)));
+  });
   const groups = groupProducts(filtered);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{ display:"none" }} />
+      <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhoto} style={{ display:"none" }} />
       {/* 📷 Escáner de código de barras de la etiqueta */}
       {scanOpen && (
         <ScanModal
@@ -968,10 +1370,12 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           }}
         />
       )}
+      {/* 📅 Filtro de fecha — por cuándo se AGREGÓ el producto */}
+      <DateRangeFilter rango={rango} onChange={setRango} />
       {/* Search + controls */}
       <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
         <div style={{ position:"relative", flex:"1 1 240px" }}>
-          <input className="stk-input" placeholder="🔍 Busca por nombre, color, talla, marca..." value={search} onChange={e=>setSearch(e.target.value)} />
+          <input className="stk-input" placeholder="🔍 Nombre, color, talla4, marca, SKU…" value={search} onChange={e=>setSearch(e.target.value)} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,fontWeight:900 }}>✕</button>}
         </div>
         {/* 📷 Escanear código de barras de la etiqueta de la prenda */}
@@ -980,6 +1384,18 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           title="Escanear la etiqueta de la prenda con la cámara"
           style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
         >📷 Escanear</button>
+        {/* 📤 Compartir catálogo (link/WhatsApp) */}
+        <button
+          onClick={() => setShareOpen(true)}
+          title="Compartir tu catálogo por link o WhatsApp"
+          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
+        >📤 Compartir</button>
+        {/* 🏷️ Imprimir etiquetas con código de barras */}
+        <button
+          onClick={() => setLabelsOpen(true)}
+          title="Imprimir etiquetas con código de barras de cada prenda"
+          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
+        >🏷️ Etiquetas</button>
         {/* ⬇️ Descargar todo el inventario en Excel */}
         <button
           onClick={descargarInventario}
@@ -1018,20 +1434,33 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
         )}
       </div>
 
-      {/* Category filters */}
-      <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4 }}>
-        {categories.map(c => <button key={c} className={`filter-btn ${filterCat===c?"active":""}`} onClick={()=>setFilterCat(c)}>{c}</button>)}
+      {/* Categoría + talla */}
+      <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4, flex:1, minWidth:0 }}>
+          {categories.map(c => <button key={c} className={`filter-btn ${filterCat===c?"active":""}`} onClick={()=>setFilterCat(c)}>{c}</button>)}
+        </div>
+        <select
+          className="stk-input"
+          value={filterSize}
+          onChange={e => setFilterSize(e.target.value)}
+          title="Filtrar por talla"
+          style={{ width:"auto", flexShrink:0, padding:"7px 10px", fontSize:12.5, fontWeight:800 }}
+        >
+          {["Todas", ...sizes].map(s => <option key={s} value={s}>{s === "Todas" ? "📏 Todas las tallas" : `📏 Talla ${s}`}</option>)}
+        </select>
       </div>
 
       {/* Result summary */}
-      {search && (
+      {(search || filterSize!=="Todas" || rango.id!=="todo") && (
         <div style={{ background:groups.length?C.blueLight:C.redLight, borderRadius:12, padding:"10px 16px", fontSize:13, fontWeight:700, color:groups.length?C.blue:C.red }}>
-          {groups.length ? `✅ ${groups.length} ref · ${filtered.length} variantes` : "😕 Sin resultados"}
+          {groups.length
+            ? `✅ ${groups.length} ref · ${filtered.length} variantes${filterSize!=="Todas" ? ` · T${filterSize}` : ""}${rango.id!=="todo" ? ` · 📅 ${rangoLabel(rango)}` : ""}`
+            : `😕 Sin resultados${filterSize!=="Todas" ? ` en talla ${filterSize}` : ""}${rango.id!=="todo" ? ` · 📅 ${rangoLabel(rango)}` : ""}`}
         </div>
       )}
 
       {/* Alert strip */}
-      {lowStock.length>0 && !search && (
+      {lowStock.length>0 && !search && filterSize==="Todas" && rango.id==="todo" && (
         <div style={{ background:C.redLight, border:"1.5px solid rgba(255,90,95,0.3)", borderRadius:14, padding:"10px 16px", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <span style={{ fontWeight:900, fontSize:13, color:C.red }}>⚠️ {lowStock.length} con problema de stock</span>
         </div>
@@ -1052,7 +1481,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <div style={{ width:42,height:42, background:hasAlert?C.redLight:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center", fontSize:22, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={group.image} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
+                      <div style={{ width:42,height:42, background:hasAlert?C.redLight:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center", fontSize:22, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
                       <div>
                         <div style={{ fontWeight:900, fontSize:16, color:C.text }}>{group.name}</div>
                         <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{group.brand} · {group.variants.length} variantes</div>
@@ -1073,13 +1502,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                     ))}
                     <span style={{ fontSize:11, color:C.muted, fontWeight:700 }}>· {totalStock} uds</span>
                     {hasAlert && <span style={{ fontSize:11, fontWeight:900, color:C.red }}>⚠️</span>}
-                    <button
-                      onClick={e => { e.stopPropagation(); setPhotoTarget(group); if (fileRef.current) fileRef.current.click(); }}
-                      title={group.image ? "Cambiar foto" : "Agregar foto"}
-                      disabled={uploading}
-                      style={{ marginLeft:"auto", background:C.bg, border:"none", borderRadius:10, padding:"5px 9px", fontSize:14, cursor:"pointer", lineHeight:1 }}
-                    >{uploading ? "⏳" : "📷"}</button>
-                    <span style={{ fontSize:14, color:C.muted }}>{isExpanded?"▲":"▼"}</span>
+                    <span style={{ fontSize:14, color:C.muted, marginLeft:"auto" }}>{isExpanded?"▲":"▼"}</span>
                     <button
                       onClick={e => { e.stopPropagation(); openEdit(group); }}
                       title="Editar referencia — agregar tallas y colores"
@@ -1124,6 +1547,42 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                           </div>
                         );
                       })}
+                      {/* 📸 Fotos por color — varias fotos por cada color de la referencia */}
+                      <div style={{ marginTop:14, paddingTop:10, borderTop:"1px dashed "+C.border }}>
+                        <div style={{ fontSize:10.5, fontWeight:900, color:C.muted, textTransform:"uppercase", marginBottom:8 }}>📸 Fotos por color</div>
+                        {[...new Set(group.variants.map(v => v.color || "—"))].map(color => {
+                          const vs = group.variants.filter(v => (v.color || "—") === color);
+                          const seed = vs.map(v => v.image).find(im => imgsDe(im).length) || "";
+                          const fotos = imgsDe(seed);
+                          return (
+                            <div key={color} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid "+C.border+"60", flexWrap:"wrap" }}>
+                              <div style={{ display:"flex", gap:6, alignItems:"center", minWidth:100 }}>
+                                <div className="color-dot" style={{ width:13, height:13, background:getColorCSS(color) }} />
+                                <span style={{ fontSize:12, fontWeight:800 }}>{color}</span>
+                              </div>
+                              <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
+                                {fotos.map((u, i) => (
+                                  <div key={u + i} style={{ position:"relative", width:42, height:42 }}>
+                                    <img src={u} alt="" style={{ width:42, height:42, borderRadius:10, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                                    <button
+                                      onClick={e => { e.stopPropagation(); quitarFoto(vs, u); }}
+                                      title="Quitar esta foto"
+                                      style={{ position:"absolute", top:-6, right:-6, width:18, height:18, borderRadius:"50%", background:C.red, color:"white", border:"none", fontSize:10, fontWeight:900, cursor:"pointer", lineHeight:1, padding:0 }}
+                                    >✕</button>
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={e => { e.stopPropagation(); setPhotoTarget({ ids: vs.map(v => v.id) }); if (fileRef.current) fileRef.current.click(); }}
+                                  title={`Agregar fotos al color ${color} (puedes elegir varias)`}
+                                  disabled={uploading}
+                                  style={{ width:42, height:42, borderRadius:10, border:"1.5px dashed "+C.border, background:C.bg, cursor:"pointer", fontSize:16, color:C.muted, fontFamily:"inherit", fontWeight:900, lineHeight:1 }}
+                                >{uploading ? "⏳" : "＋"}</button>
+                              </div>
+                              <span style={{ fontSize:10, color:C.muted, fontWeight:700 }}>{fotos.length} foto{fotos.length === 1 ? "" : "s"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                       <div style={{ display:"flex", justifyContent:"flex-end", gap:16, marginTop:10, flexWrap:"wrap" }}>
                         <button onClick={()=>openEdit(group)} style={{ background:"none",border:"none",color:C.blue,fontSize:12,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>✏️ Editar referencia (agregar tallas/colores)</button>
                         <button onClick={()=>deleteGroup(group)} style={{ background:"none",border:"none",color:C.red,fontSize:12,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Eliminar referencia (permanente)</button>
@@ -1147,7 +1606,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                   {p.image
-                    ? <img src={p.image} alt="" style={{ width:34, height:34, borderRadius:10, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
+                    ? <img src={primeraImg(p.image)} alt="" style={{ width:34, height:34, borderRadius:10, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
                     : <div className="color-dot" style={{ width:22,height:22, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
@@ -1195,7 +1654,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   const td = { padding:"9px 10px", borderBottom:"1px solid "+C.border+"60", whiteSpace:"nowrap" };
                   return (
                     <tr key={p.id}>
-                      <td style={td}>{p.image ? <img src={p.image} alt="" style={{ width:30, height:30, borderRadius:8, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:17 }}>{p.emoji}</span>}</td>
+                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" style={{ width:30, height:30, borderRadius:8, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:17 }}>{p.emoji}</span>}</td>
                       <td style={{ ...td, fontWeight:800 }}>{p.name}</td>
                       <td style={{ ...td, color:C.muted, fontWeight:600 }}>{p.sku}</td>
                       <td style={td}>{p.brand||"—"}</td>
@@ -1227,7 +1686,11 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       )}
 
       {/* Editor de referencia — agregar/quitar tallas y colores de la misma referencia */}
-      {editGroup && <EditReferenceModal group={editGroup} onClose={() => setEditGroup(null)} onSave={saveEdit} />}
+      {editGroup && <EditReferenceModal group={editGroup} workspaceId={workspaceId} showToast={showToast} onClose={() => setEditGroup(null)} onSave={saveEdit} />}
+      {/* 📤 Compartir catálogo (link público para WhatsApp) */}
+      {shareOpen && <ShareModal workspaceId={workspaceId} sizes={sizes} onClose={() => setShareOpen(false)} showToast={showToast} />}
+      {/* 🏷️ Etiquetas imprimibles con código de barras */}
+      {labelsOpen && <LabelsModal products={products} onClose={() => setLabelsOpen(false)} showToast={showToast} />}
     </div>
   );
 }
@@ -1244,10 +1707,41 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
     setSales([]);
     showToast("🗑️ Ventas vaciadas");
   };
+  // ⬇️ Descarga las ventas DEL RANGO elegido en Excel (.xlsx)
+  function descargarVentas() {
+    if (!ventasR.length) { showToast("📭 No hay ventas en este rango"); return; }
+    cargarScriptXLSX(
+      "⏳ Preparando tus ventas…",
+      "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
+      () => {
+        try {
+          const cab = ["fecha","sku","producto","color","talla","cantidad","método","total"];
+          const filas = ventasR.map(s => {
+            const p = products.find(x => x.id === s.productId);
+            return [s.date, p?.sku || "", p?.name || "Producto", p?.color || "", p?.size || "", s.qty, s.method, s.total];
+          });
+          const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
+          ws["!cols"] = cab.map((h, i) => {
+            let m = String(h).length;
+            for (const f of filas) { const l = String(f[i] == null ? "" : f[i]).length; if (l > m) m = l; }
+            return { wch: Math.min(45, m + 2) };
+          });
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Ventas");
+          XLSX.writeFile(wb, `ventas-stokly-${hoyISO()}.xlsx`);
+          showToast(`✅ ${filas.length} ventas descargadas${rango.id !== "todo" ? " · " + rangoLabel(rango) : ""}`);
+        } catch (e) { console.error("[stokly] export ventas:", e); showToast("❌ No se pudo descargar: " + (e && e.message)); }
+      },
+      (m) => { if (m && m.charAt(0) !== "⏳") showToast(m); }
+    );
+  }
   const colors = { Efectivo:[C.green,C.greenLight], Tarjeta:[C.blue,C.blueLight], Nequi:[C.purple,C.purpleLight], Transferencia:[C.orange,C.orangeLight], Daviplata:[C.red,C.redLight] };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      <DateRangeFilter rango={rango} onChange={setRango} />
+      <div style={{ display:"flex", gap:10, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
+        <DateRangeFilter rango={rango} onChange={setRango} />
+        <button onClick={descargarVentas} title="Descargar las ventas del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
+      </div>
       <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total histórico":"Total · "+rangoLabel(rango)}</div>
         <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
@@ -1293,6 +1787,31 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
   const gastosR = expenses.filter(e => solapaRango(e, rango));
   const totalR = gastosR.reduce((a,e)=>a+e.amount,0);
   const byCategory = gastosR.reduce((acc,e)=>{acc[e.category]=(acc[e.category]||0)+e.amount;return acc;},{});
+  // ⬇️ Descarga los gastos DEL RANGO elegido en Excel (.xlsx)
+  function descargarGastos() {
+    if (!gastosR.length) { showToast("📭 No hay gastos en este rango"); return; }
+    cargarScriptXLSX(
+      "⏳ Preparando tus gastos…",
+      "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
+      () => {
+        try {
+          const cab = ["fecha","hasta","concepto","monto","categoría"];
+          const filas = gastosR.map(e => [e.date, e.dateEnd || "", e.concept, e.amount, e.category]);
+          const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
+          ws["!cols"] = cab.map((h, i) => {
+            let m = String(h).length;
+            for (const f of filas) { const l = String(f[i] == null ? "" : f[i]).length; if (l > m) m = l; }
+            return { wch: Math.min(45, m + 2) };
+          });
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Gastos");
+          XLSX.writeFile(wb, `gastos-stokly-${hoyISO()}.xlsx`);
+          showToast(`✅ ${filas.length} gastos descargados${rango.id !== "todo" ? " · " + rangoLabel(rango) : ""}`);
+        } catch (e) { console.error("[stokly] export gastos:", e); showToast("❌ No se pudo descargar: " + (e && e.message)); }
+      },
+      (m) => { if (m && m.charAt(0) !== "⏳") showToast(m); }
+    );
+  }
   const clearExpenses = () => {
     if (!window.confirm(`🗑️ ¿Vaciar gastos?\n\nSe eliminarán PERMANENTEMENTE los ${expenses.length} gastos.`)) return;
     if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todos los gastos?")) return;
@@ -1301,7 +1820,10 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
   };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      <DateRangeFilter rango={rango} onChange={setRango} />
+      <div style={{ display:"flex", gap:10, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
+        <DateRangeFilter rango={rango} onChange={setRango} />
+        <button onClick={descargarGastos} title="Descargar los gastos del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
+      </div>
       <div style={{ background:"linear-gradient(135deg,#FF8C42,#FF5A5F)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total gastos":"Total gastos · "+rangoLabel(rango)}</div>
         <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
@@ -1484,25 +2006,37 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
 }
 
 // ── METRICS ───────────────────────────────────────────────────────────────────
-function Metrics({ products, sales, totalSales, profit, isMobile }) {
-  const topSold = [...products].sort((a,b)=>b.sold-a.sold);
-  const byBrand = products.reduce((acc,p)=>{if(!acc[p.brand])acc[p.brand]=0;acc[p.brand]+=p.sold;return acc;},{});
-  const byColor = products.reduce((acc,p)=>{if(!acc[p.color])acc[p.color]=0;acc[p.color]+=p.sold;return acc;},{});
-  // unidades vendidas por talla
+function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
+  const [rango, setRango] = useState({ id:"todo" });
+  const sF = sales.filter(s => enRango(s.date, rango));
+  const eF = expenses.filter(e => solapaRango(e, rango));
+  const totalSR = sF.reduce((a,s) => a + s.total, 0);
+  const totalER = eF.reduce((a,e) => a + e.amount, 0);
+  const profitR = totalSR - totalER;
+  // unidades vendidas POR PRODUCTO dentro del rango elegido
+  const porProducto = {};
+  sF.forEach(s => { if (s.productId) porProducto[s.productId] = (porProducto[s.productId] || 0) + (s.qty || 0); });
+  const vend = (p) => !p ? 0 : (rango.id === "todo" ? (p.sold || 0) : (porProducto[p.id] || 0));
+  const topSold = [...products].sort((a,b)=>vend(b)-vend(a));
+  const ranking = rango.id === "todo" ? topSold : topSold.filter(p => vend(p) > 0);
+  const byBrand = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.brand])acc[p.brand]=0;acc[p.brand]+=v;return acc;},{});
+  const byColor = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.color])acc[p.color]=0;acc[p.color]+=v;return acc;},{});
+  // unidades vendidas por talla (según el rango elegido)
   const sizeMap = {};
-  products.forEach(p => { const s = String(p.size ?? "").trim(); if (!s) return; sizeMap[s] = (sizeMap[s] || 0) + (Number(p.sold) || 0); });
+  products.forEach(p => { const s = String(p.size ?? "").trim(); const v = vend(p); if (!s || !v) return; sizeMap[s] = (sizeMap[s] || 0) + v; });
   const bySize = Object.entries(sizeMap).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   const maxSize = bySize[0]?.[1] || 1;
   const totalSizeSold = bySize.reduce((a, [, v]) => a + v, 0);
-  const maxSold = topSold[0]?.sold||1;
-  const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>b.sold-a.sold);
-  const margin = totalSales?pct(profit,totalSales):0;
+  const maxSold = topSold.length ? (vend(topSold[0]) || 1) : 1;
+  const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>vend(b)-vend(a));
+  const margin = totalSR?pct(profitR,totalSR):0;
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+      <DateRangeFilter rango={rango} onChange={setRango} />
       <div className="grid-4">
         {[
           {label:"Margen neto",   value:`${margin}%`,                                    color:margin>30?C.green:C.orange, bg:margin>30?C.greenLight:C.orangeLight},
-          {label:"Ticket prom.", value:fmt(sales.length?Math.round(totalSales/sales.length):0), color:C.blue,   bg:C.blueLight},
+          {label:"Ticket prom.", value:fmt(sF.length?Math.round(totalSR/sF.length):0), color:C.blue,   bg:C.blueLight},
           {label:"Más vendido",  value:topSold[0]?.name.split(" ")[0]||"—",              color:C.yellow, bg:C.yellowLight},
           {label:"Referencias",  value:products.length,                                  color:C.purple, bg:C.purpleLight},
         ].map(k=><div key={k.label} className="stat-card" style={{ background:k.bg }}><div style={{ fontSize:11,fontWeight:800,color:k.color,marginBottom:6,textTransform:"uppercase" }}>{k.label}</div><div style={{ fontSize:24,fontWeight:900,color:C.text }}>{k.value}</div></div>)}
@@ -1510,7 +2044,13 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
       <div className={isMobile?"":"desktop-2col"}>
         <div className="card" style={{ padding:20 }}>
           <div className="section-title">🏆 Ranking de ventas</div>
-          {topSold.map((p,i)=>(
+          {ranking.length === 0 && (
+            <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
+              Sin ventas en este rango 📅<br />
+              <span style={{ fontWeight:600 }}>Cambia el rango de tiempo para ver quién lidera.</span>
+            </div>
+          )}
+          {ranking.map((p,i)=>(
             <div key={p.id} style={{ marginBottom:14 }}>
               <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center" }}>
                 <div style={{ display:"flex",gap:8,alignItems:"center" }}>
@@ -1518,16 +2058,16 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
                   <div className="color-dot" style={{ width:14,height:14,background:getColorCSS(p.color) }} />
                   <span style={{ fontWeight:800,fontSize:13 }}>{p.name} <span style={{ color:C.muted,fontWeight:600 }}>/ {p.color}</span></span>
                 </div>
-                <span style={{ fontWeight:900,color:C.green,fontSize:13 }}>{p.sold}</span>
+                <span style={{ fontWeight:900,color:C.green,fontSize:13 }}>{vend(p)}</span>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((p.sold/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((vend(p)/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
             </div>
           ))}
         </div>
         <div>
           <div className="card" style={{ padding:20, marginBottom:16 }}>
             <div className="section-title">🎨 Colores preferidos</div>
-            {Object.entries(byColor).sort((a,b)=>b[1]-a[1]).map(([color,sold])=>(
+            {Object.entries(byColor).filter(([,sold])=>sold>0).sort((a,b)=>b[1]-a[1]).map(([color,sold])=>(
               <div key={color} style={{ marginBottom:12 }}>
                 <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center" }}>
                   <div style={{ display:"flex",gap:8,alignItems:"center" }}>
@@ -1536,9 +2076,12 @@ function Metrics({ products, sales, totalSales, profit, isMobile }) {
                   </div>
                   <span style={{ fontWeight:900,color:C.purple }}>{sold} uds</span>
                 </div>
-                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(...Object.values(byColor)))*100)}%`, background:"linear-gradient(90deg,#F472B6,#8B5CF6)" }} /></div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(1,...Object.values(byColor)))*100)}%`, background:"linear-gradient(90deg,#F472B6,#8B5CF6)" }} /></div>
               </div>
             ))}
+            {Object.entries(byColor).filter(([,sold])=>sold>0).length === 0 && (
+              <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>Sin ventas en este rango 📅</div>
+            )}
           </div>
           <div className="card" style={{ padding:20, marginBottom:16 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -1627,10 +2170,32 @@ function OptionPickerModal({ title, subtitle, options, onClose }) {
 }
 
 // Modal para editar una referencia: cambia datos base y agrega/quita tallas y colores
-function EditReferenceModal({ group, onClose, onSave }) {
+function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) {
   const [rf, setRf] = useState({ name: group.name, brand: group.brand || "", category: group.category || "Otro" });
   const [vars, setVars] = useState(() => group.variants.map(v => ({ ...v })));
   const [err, setErr] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [fotoColor, setFotoColor] = useState(null); // color al que se le agregan fotos
+  const photoRef = useRef(null);
+
+  // 📸 Agrega varias fotos al color elegido (en todas sus variantes)
+  async function pickColorPhotos(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length || !fotoColor) return;
+    setUploading(true);
+    try {
+      const nuevas = [];
+      for (const f of files) nuevas.push(await uploadProductImage(f, workspaceId));
+      setVars(vs => vs.map(v => ((v.color || "—") === fotoColor ? { ...v, image: juntarImgs([...imgsDe(v.image), ...nuevas]) } : v)));
+      if (showToast) showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""}`);
+    } catch (err2) {
+      console.error("[stokly] foto ref:", err2 && err2.message);
+      if (showToast) showToast("❌ No se pudo subir la foto");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const updVar = (i, key, val) => setVars(vs => vs.map((v, j) => (j === i ? { ...v, [key]: val } : v)));
   const addVar = () => setVars(vs => [...vs, {
@@ -1720,6 +2285,42 @@ function EditReferenceModal({ group, onClose, onSave }) {
           })}
         </div>
 
+        {/* 📸 Fotos por color de la referencia (varias por color) */}
+        <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", margin:"2px 0 8px" }}>📸 Fotos por color</div>
+        <input ref={photoRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={pickColorPhotos} />
+        {[...new Set(vars.map(v => v.color || "—"))].map(color => {
+          const deColor = vars.filter(v => (v.color || "—") === color);
+          const seed = deColor.map(v => v.image).find(im => imgsDe(im).length) || "";
+          const fotos = imgsDe(seed);
+          return (
+            <div key={color} style={{ display:"flex", gap:8, alignItems:"center", background:C.bg, borderRadius:12, padding:"8px 10px", marginBottom:8, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", gap:6, alignItems:"center", minWidth:92 }}>
+                <div className="color-dot" style={{ width:13, height:13, background:getColorCSS(color) }} />
+                <span style={{ fontSize:12.5, fontWeight:800 }}>{color}</span>
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
+                {fotos.map(u => (
+                  <div key={u} style={{ position:"relative", width:40, height:40 }}>
+                    <img src={u} alt="" style={{ width:40, height:40, borderRadius:9, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                    <button
+                      onClick={() => setVars(vs => vs.map(v => ((v.color || "—") === color ? { ...v, image: juntarImgs(imgsDe(v.image).filter(x => x !== u)) } : v)))}
+                      title="Quitar foto"
+                      style={{ position:"absolute", top:-6, right:-6, width:17, height:17, borderRadius:"50%", background:C.red, color:"#fff", border:"none", fontSize:9, fontWeight:900, cursor:"pointer", padding:0 }}
+                    >✕</button>
+                  </div>
+                ))}
+                <button
+                  className="filter-btn"
+                  onClick={() => { setFotoColor(color); if (photoRef.current) photoRef.current.click(); }}
+                  disabled={uploading}
+                  style={{ padding:"6px 10px" }}
+                >{uploading ? "⏳ Subiendo…" : "＋ Fotos"}</button>
+              </div>
+              <span style={{ fontSize:10, color:C.muted, fontWeight:700 }}>{fotos.length} foto{fotos.length === 1 ? "" : "s"}</span>
+            </div>
+          );
+        })}
+
         {err && <div style={{ marginBottom:12, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
         <div style={{ display:"flex", gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
@@ -1803,8 +2404,15 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
 
 function AddSaleModal({ products, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
+  const [scanOpen,setScanOpen]=useState(false); const [err,setErr]=useState("");
   const p=products.find(x=>String(x.id)===String(pid)); const total=p?p.price*qty:0;
-  function save() { if(!p||qty<1||p.stock<qty) return; onSave({id:newId(),productId:String(pid),qty:+qty,total,date:hoyISO(),method},String(pid),+qty); }
+  function save() {
+    if(!p){ setErr("⚠️ Elige un producto — o escanea su etiqueta con 📷"); return; }
+    if(qty<1){ setErr("⚠️ La cantidad debe ser al menos 1"); return; }
+    if(p.stock<qty){ setErr(`⚠️ Solo hay ${p.stock} unidades disponibles de ${p.name}`); return; }
+    setErr("");
+    onSave({id:newId(),productId:String(pid),qty:+qty,total,date:hoyISO(),method},String(pid),+qty);
+  }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="sheet">
@@ -1813,10 +2421,13 @@ function AddSaleModal({ products, onClose, onSave }) {
         <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Producto</div>
-            <select className="stk-input" value={pid} onChange={e=>setPid(e.target.value)}>
-              <option value="">Selecciona un producto</option>
-              {products.filter(p=>p.stock>0).map(p=><option key={p.id} value={String(p.id)}>{p.emoji} {p.name} — {p.color}/T{p.size} ({p.stock} disp.) — {fmt(p.price)}</option>)}
-            </select>
+            <div style={{ display:"flex", gap:8 }}>
+              <select className="stk-input" style={{ flex:1, minWidth:0 }} value={pid} onChange={e=>{setPid(e.target.value); setErr("");}}>
+                <option value="">Selecciona un producto</option>
+                {products.filter(pp=>pp.stock>0||String(pp.id)===String(pid)).map(pp=><option key={pp.id} value={String(pp.id)}>{pp.emoji} {pp.name} — {pp.color}/T{pp.size} ({pp.stock} disp.) — {fmt(pp.price)}</option>)}
+              </select>
+              <button className="filter-btn" onClick={()=>setScanOpen(true)} title="Escanear la etiqueta de la prenda con la cámara" style={{ padding:"0 14px", flexShrink:0 }}>📷</button>
+            </div>
           </div>
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Cantidad</div>
@@ -1834,10 +2445,28 @@ function AddSaleModal({ products, onClose, onSave }) {
           </div>
           {p&&<div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}><div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div><div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div></div>}
         </div>
+        {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
           <button className="btn-main" onClick={save} style={{ flex:2 }}>Confirmar venta</button>
         </div>
+        {/* 📷 Escanear la etiqueta para elegir el producto al instante */}
+        {scanOpen && (
+          <ScanModal
+            onClose={()=>setScanOpen(false)}
+            onScan={(code) => {
+              const f = buscarPorCodigo(products, code);
+              if (f) {
+                setPid(String(f.id));
+                setQty(1);
+                setErr("");
+                setScanOpen(false);
+                return null;
+              }
+              return `El código "${code}" no está en tu inventario`;
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1977,10 +2606,11 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     if (subiendo) return;
     const unicas = [];
     parsed.forEach(p => {
-      const v = (p.image||"").trim();
-      if (!v || normalizarFotoURL(v)) return;
-      const base = v.split(/[\\/]/).pop().toLowerCase();
-      if (fotos[base] && !unicas.includes(base)) unicas.push(base);
+      imgsDe(p.image).forEach(v => {
+        if (!v || normalizarFotoURL(v)) return;
+        const base = v.split(/[\\/]/).pop().toLowerCase();
+        if (fotos[base] && !unicas.includes(base)) unicas.push(base);
+      });
     });
     const mapaURL = {};
     let fallos = 0;
@@ -1995,14 +2625,17 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     }
     let sinFoto = 0;
     const finalP = parsed.map(p => {
-      const v = (p.image||"").trim();
-      if (!v) return p;
-      const url = normalizarFotoURL(v);
-      if (url) return { ...p, image: url };
-      const base = v.split(/[\\/]/).pop().toLowerCase();
-      if (mapaURL[base]) return { ...p, image: mapaURL[base] };
-      sinFoto++;
-      return { ...p, image: "" };
+      const ps = imgsDe(p.image);
+      if (!ps.length) return p;
+      const ok = [];
+      ps.forEach(v => {
+        const url = normalizarFotoURL(v);
+        if (url) { ok.push(url); return; }
+        const base = v.split(/[\\/]/).pop().toLowerCase();
+        if (mapaURL[base]) { ok.push(mapaURL[base]); return; }
+        sinFoto++;
+      });
+      return { ...p, image: ok.join("||") };
     });
     setSubiendo("");
     let aviso = "";
@@ -2013,12 +2646,10 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     onImport(finalP, mode, aviso);
   }
 
-  const conFoto = parsed.filter(p => !!(p.image||"").trim()).length;
-  const pendAdj = parsed.filter(p => {
-    const v = (p.image||"").trim();
-    if (!v || normalizarFotoURL(v)) return false;
-    return !fotos[v.split(/[\\/]/).pop().toLowerCase()];
-  }).length;
+  const conFoto = parsed.filter(p => imgsDe(p.image).length > 0).length;
+  const pendAdj = parsed.filter(p =>
+    imgsDe(p.image).some(v => v && !normalizarFotoURL(v) && !fotos[v.split(/[\\/]/).pop().toLowerCase()])
+  ).length;
 
   const srcBtn=(id,emoji,label,desc,color,bg)=>(
     <button key={id} onClick={()=>{setSrc(id);setError("");}} style={{ flex:1,background:src===id?bg:C.bg,border:`2px solid ${src===id?color:C.border}`,borderRadius:14,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"left" }}>
@@ -2044,7 +2675,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
               📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen</b>.<br/>
-              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…)</span>
+              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
             </div>
             <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
             <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
@@ -2093,7 +2724,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           <div style={{ background:C.blueLight, borderRadius:14, padding:12, marginBottom:14 }}>
             <div style={{ fontSize:13, fontWeight:900, marginBottom:4 }}>📎 Adjuntar fotos (opcional)</div>
             <div style={{ fontSize:11.5, color:C.muted, fontWeight:600, lineHeight:1.6, marginBottom:8 }}>
-              En la columna <b>imagen</b> escribe el <b>nombre del archivo</b> de la foto (ej: <i>camiseta.jpg</i>) y aquí adjunta las fotos: Stokly las sube y las deja guardadas en cada producto. Si prefieres, pega un <b>enlace https://…</b> en esa columna (Google Drive también funciona).
+              En la columna <b>imagen</b> escribe el <b>nombre del archivo</b> de la foto (ej: <i>camiseta.jpg</i>) y aquí adjunta las fotos: Stokly las sube y las deja guardadas en cada producto. Si prefieres, pega un <b>enlace https://…</b> en esa columna (Google Drive también funciona). <b>Varias fotos:</b> separa los enlaces con <b>||</b>.
             </div>
             <input ref={fotosRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{
               const map = {};
@@ -2107,9 +2738,9 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           </div>
           <div className="card" style={{ padding:14,maxHeight:250,overflowY:"auto",marginBottom:16 }}>
             {parsed.slice(0,40).map((p,i)=>{
-              const val=(p.image||"").trim();
-              const url=normalizarFotoURL(val);
-              const nombreFoto=val&&!url?val.split(/[\\/]/).pop().toLowerCase():"";
+              const partesCelda=imgsDe(p.image);
+              const url=partesCelda.length?normalizarFotoURL(partesCelda[0]):"";
+              const nombreFoto=!url&&partesCelda.length?partesCelda[0].split(/[\\/]/).pop().toLowerCase():"";
               const adjunta=nombreFoto?!!fotos[nombreFoto]:false;
               return (
               <div key={i} style={{ display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border }}>

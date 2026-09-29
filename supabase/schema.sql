@@ -374,3 +374,13 @@ alter table expenses add column if not exists date_end date;
 -- Código de barras por variante de producto (para escanear la etiqueta de la prenda)
 alter table products add column if not exists barcode text;
 
+
+
+-- 📲 Catálogo público (vista) — se ve con #/catalogo?ws=... sin iniciar sesión
+-- Solo expone columnas seguras (sin costo, vendidos ni datos del usuario)
+create or replace view public.catalogo as
+  select id, workspace_id, name, sku, brand, color, size, category,
+         stock, price, emoji, image_url, barcode, created_at
+  from public.products;
+
+grant select on public.catalogo to anon, authenticated;
