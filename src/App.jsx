@@ -1204,7 +1204,7 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
 function Inventory({ products, setProducts, lowStock, showToast, setModal, setImportView, isMobile, workspaceId }) {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState("visual");
-  const [viewMenu, setViewMenu] = useState(false); // menú desplegable "Vista"
+  const [toolsMenu, setToolsMenu] = useState(false); // menú desplegable "Acciones" (escanear, compartir, etiquetas, descargar, vista, vaciar)
   const [filterCat, setFilterCat] = useState("Todos");
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [photoTarget, setPhotoTarget] = useState(null);
@@ -1378,60 +1378,69 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           <input className="stk-input" placeholder="🔍 Nombre, color, talla4, marca, SKU…" value={search} onChange={e=>setSearch(e.target.value)} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,fontWeight:900 }}>✕</button>}
         </div>
-        {/* 📷 Escanear código de barras de la etiqueta de la prenda */}
-        <button
-          onClick={() => setScanOpen(true)}
-          title="Escanear la etiqueta de la prenda con la cámara"
-          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
-        >📷 Escanear</button>
-        {/* 📤 Compartir catálogo (link/WhatsApp) */}
-        <button
-          onClick={() => setShareOpen(true)}
-          title="Compartir tu catálogo por link o WhatsApp"
-          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
-        >📤 Compartir</button>
-        {/* 🏷️ Imprimir etiquetas con código de barras */}
-        <button
-          onClick={() => setLabelsOpen(true)}
-          title="Imprimir etiquetas con código de barras de cada prenda"
-          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
-        >🏷️ Etiquetas</button>
-        {/* ⬇️ Descargar todo el inventario en Excel */}
-        <button
-          onClick={descargarInventario}
-          title="Descargar todo el inventario en Excel (.xlsx)"
-          style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", flexShrink:0 }}
-        >⬇️ Descargar</button>
-        {/* Menú desplegable "Vista" (ahorra espacio:3 vistas en1 botón) */}
+        {/* ☰ Menú desplegable "Acciones" — agrupa escanear, compartir, etiquetas, descargar, vista y vaciar */}
         <div style={{ position:"relative", flexShrink:0 }}>
           <button
-            onClick={() => setViewMenu(v => !v)}
-            title="Cambiar vista del inventario"
+            onClick={() => setToolsMenu(m => !m)}
+            title="Todas las acciones del inventario"
             style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}
           >
-            👁 Vista {viewMenu ? "▴" : "▾"}
+            ☰ Acciones {toolsMenu ? "▴" : "▾"}
           </button>
-          {viewMenu && (
+          {toolsMenu && (
             <>
-              <div onClick={() => setViewMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
-              <div style={{ position:"absolute", top:42, left:0, background:"white", borderRadius:14, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", zIndex:80, overflow:"hidden", minWidth:175, fontFamily:"inherit", textAlign:"left" }}>
+              <div onClick={() => setToolsMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
+              <div style={{ position:"absolute", top:42, right:0, background:"white", borderRadius:14, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", zIndex:80, overflow:"hidden", minWidth:205, fontFamily:"inherit", textAlign:"left" }}>
+                {[
+                  { icon:"📷",   label:"Escanear etiqueta",    desc:"Cámara o código", fn:() => setScanOpen(true) },
+                  { icon:"📤",   label:"Compartir catálogo",   desc:"Link o WhatsApp", fn:() => setShareOpen(true) },
+                  { icon:"🏷️",   label:"Etiquetas",            desc:"Código de barras", fn:() => setLabelsOpen(true) },
+                  { icon:"⬇️",   label:"Descargar",            desc:"Inventario en Excel", fn:descargarInventario },
+                ].map(o => (
+                  <button
+                    key={o.label}
+                    onClick={() => { setToolsMenu(false); o.fn(); }}
+                    style={{ width:"100%", padding:"10px 14px", background:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:13, color:C.text, fontFamily:"inherit", display:"flex", alignItems:"center", gap:9 }}
+                  >
+                    <span style={{ fontSize:15, width:20, textAlign:"center", flexShrink:0 }}>{o.icon}</span>
+                    <span style={{ display:"flex", flexDirection:"column", minWidth:0 }}>
+                      <span>{o.label}</span>
+                      <span style={{ fontSize:10, fontWeight:700, color:C.muted }}>{o.desc}</span>
+                    </span>
+                  </button>
+                ))}
+                <div style={{ height:1, background:"#EAECF5", margin:"4px 0" }} />
+                <div style={{ padding:"6px 14px 2px", fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", letterSpacing:.4 }}>👁 Vista</div>
                 {[["visual","📋 Visual"],["list","☰ Lista"],["table","🗒️ Tabla"]].map(([id,label]) => (
                   <button
                     key={id}
-                    onClick={() => { setViewMode(id); setViewMenu(false); }}
-                    style={{ width:"100%", padding:"12px 14px", background:viewMode===id?C.greenLight:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:13, color:viewMode===id?C.green:C.text, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                    onClick={() => { setViewMode(id); setToolsMenu(false); }}
+                    style={{ width:"100%", padding:"9px 14px", background:viewMode===id?C.greenLight:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:13, color:viewMode===id?C.green:C.text, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                   >
                     <span>{label}</span>
                     {viewMode===id && <span style={{ marginLeft:"auto", fontWeight:900 }}>✓</span>}
                   </button>
                 ))}
+                {products.length>0 && (
+                  <>
+                    <div style={{ height:1, background:"#EAECF5", margin:"4px 0" }} />
+                    <button
+                      onClick={() => { setToolsMenu(false); clearAll(); }}
+                      title="Vaciar todo el inventario (borrado permanente)"
+                      style={{ width:"100%", padding:"10px 14px", background:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:900, fontSize:13, color:C.red, fontFamily:"inherit", display:"flex", alignItems:"center", gap:9 }}
+                    >
+                      <span style={{ fontSize:15, width:20, textAlign:"center", flexShrink:0 }}>🗑️</span>
+                      <span style={{ display:"flex", flexDirection:"column" }}>
+                        <span>Vaciar</span>
+                        <span style={{ fontSize:10, fontWeight:700, opacity:.8 }}>Borrado permanente</span>
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}
         </div>
-        {products.length>0 && (
-          <button onClick={clearAll} title="Vaciar todo el inventario (borrado permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:12, padding:"10px 14px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar</button>
-        )}
       </div>
 
       {/* Categoría + talla */}
