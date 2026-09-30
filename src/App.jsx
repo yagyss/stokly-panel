@@ -2612,8 +2612,8 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (!rf.name.trim()) { setErr("El nombre de la referencia es obligatorio"); return; }
     if (!vars.length) { setErr("Debe quedar al menos una variante"); return; }
     if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
-    if (!catId) { setErr("Elige la categoría"); return; }
-    if (!subId) { setErr("Elige la subcategoría"); return; }
+    if (!catId && !cats.error) { setErr("Elige la categoría"); return; }
+    if (!subId && !cats.error) { setErr("Elige la subcategoría"); return; }
     if (nombreCat && subsDeCat.length && !subsDeCat.some(s => String(s.id) === String(subId))) {
       setErr("La subcategoría no pertenece a la categoría elegida"); return;
     }
@@ -2809,8 +2809,11 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     const miss = [];
     if (!f.name.trim()) miss.push("Nombre");
     if (f.stock === "" || f.stock == null) miss.push("Stock");
-    if (!catId) miss.push("Categoría");
-    if (!subId) miss.push("Subcategoría");
+    // Si las categorías no pudieron cargar (sin conexión), no bloqueamos el guardado
+    if (!cats.error) {
+      if (!catId) miss.push("Categoría");
+      if (!subId) miss.push("Subcategoría");
+    }
     if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
     setErr("");
     const catFinal = nombreCat || f.category || "Otro";
