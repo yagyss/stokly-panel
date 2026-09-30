@@ -15,6 +15,7 @@ import {
   expenseFromRow,
   expenseToRow,
   newId,
+  useCategorias,
 } from "./lib/data.js";
 
 const C = {
@@ -76,13 +77,13 @@ const INIT_EXPENSES = [
 
 const fmt  = (n) => "$" + Number(Math.round(n)).toLocaleString("es-CO");
 const pct  = (a,b) => b ? Math.round((a/b)*100) : 0;
-const catEmoji = { Ropa:"👕", Calzado:"👟", Accesorios:"🧢", Otro:"📦" };
+const catEmoji = { Ropa:"👕", Calzado:"👟", Accesorios:"🧢", Otro:"📦", Otros:"📦", "Bolsos y Carteras":"👜", "Joyería y Bisutería":"💍", "Belleza y Cuidado Personal":"💄" };
 
 function groupProducts(products) {
   const g = {};
   for (const p of products) {
     const k = `${p.name}__${p.brand}`;
-    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, price:p.price, cost:p.cost, image:p.image||"", variants:[] };
+    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, categoryId:p.categoryId || "", subcategory:p.subcategory || "", subcategoryId:p.subcategoryId || "", price:p.price, cost:p.cost, image:p.image||"", variants:[] };
     if (!g[k].image && p.image) g[k].image = p.image;
     g[k].variants.push(p);
   }
@@ -679,10 +680,18 @@ function PublicCatalog() {
     return conStock.length === 1 ? conStock[0].size : "";
   };
   const enPedido = (k) => pedido.some(x => x.key === k);
+  const cantDe = (k) => { const it = pedido.find(x => x.key === k); return it ? (it.qty || 1) : 0; };
+  // Suma/ resta unidades (al llegar a 0 la saca del pedido)
+  const ajustar = (k, d) => setPedido(prev => prev.flatMap(x => {
+    if (x.key !== k) return [x];
+    const q = (x.qty || 1) + d;
+    return q <= 0 ? [] : [{ ...x, qty:q }];
+  }));
   const alternarPedido = (g) => setPedido(prev => prev.some(x => x.key === g.key)
     ? prev.filter(x => x.key !== g.key)
-    : [...prev, { key:g.key, name:g.name, brand:g.brand, color:g.color, price:g.price, emoji:g.emoji }]);
-  const totalPedido = pedido.reduce((a, x) => a + (+x.price || 0), 0);
+    : [...prev, { key:g.key, name:g.name, brand:g.brand, color:g.color, price:g.price, emoji:g.emoji, qty:1 }]);
+  const unidades = pedido.reduce((a, x) => a + (x.qty || 1), 0);
+  const totalPedido = pedido.reduce((a, x) => a + (+x.price || 0) * (x.qty || 1), 0);
   const tallaDe = (x) => {
     if (tallasSel[x.key]) return tallasSel[x.key];
     const g = grupos.find(z => z.key === x.key);
@@ -690,10 +699,13 @@ function PublicCatalog() {
   };
   const enviarPedido = () => {
     if (!pedido.length) return;
-    const lineas = pedido.map((x, i) => `${i + 1}) ${x.name}${x.color ? " · " + x.color : ""}${tallaDe(x) ? " · Talla " + tallaDe(x) : ""}${x.price ? " — " + fmt(x.price) : ""}`);
+    const lineas = pedido.map((x, i) => {
+      const n = x.qty || 1;
+      return `${i + 1}) ${x.name}${x.color ? " · " + x.color : ""}${tallaDe(x) ? " · Talla " + tallaDe(x) : ""}${n > 1 ? ` · ${n} unidades` : ""} — ${fmt((+x.price || 0) * n)}`;
+    });
     const txt =
       `🛍️ *¡Hola! Quiero pedir del catálogo:*\n\n${lineas.join("\n")}\n\n` +
-      `*Total: ${fmt(totalPedido)} · ${pedido.length} prenda${pedido.length === 1 ? "" : "s"}*\n` +
+      `*Total: ${fmt(totalPedido)} · ${unidades} unidad${unidades === 1 ? "" : "es"}*\n` +
       `_(Te confirmo cantidades y cualquier detalle por aquí.)_`;
     // wa.me/<número> abre WhatsApp con el chat de la TIENDA (el mismo del que
     // llegó el link). Usamos location.href en vez de window.open porque el
@@ -782,13 +794,34 @@ function PublicCatalog() {
                     );
                   })}
                 </div>
-                <button
-                  onClick={() => alternarPedido(g)}
-                  title="Juntar esta prenda para pedirla por WhatsApp"
-                  style={{ width:"100%", marginTop:12, padding:"11px 12px", borderRadius:13, cursor:"pointer", fontFamily:"inherit", fontWeight:900, fontSize:13.5, border:`2px solid ${enPedido(g.key) ? C.green : C.green + "90"}`, background:enPedido(g.key) ? C.green : "transparent", color:enPedido(g.key) ? "white" : C.green }}
-                >
-                  {enPedido(g.key) ? "✓ En el pedido · toca para quitar" : "＋ Añadir al pedido"}
-                </button>
+                {enPedido(g.key) ? (
+                  <div style={{ display:"flex", gap:7, alignItems:"stretch", marginTop:12 }}>
+                    <button
+                      onClick={() => ajustar(g.key, -1)}
+                      title={cantDe(g.key) <= 1 ? "Quitar del pedido" : "Quitar una unidad"}
+                      style={{ width:42, flexShrink:0, borderRadius:13, border:`2px solid ${C.green}`, background:"transparent", color:C.green, fontSize:21, fontWeight:900, lineHeight:1, cursor:"pointer", fontFamily:"inherit" }}
+                    >−</button>
+                    <div style={{ flex:1, minWidth:0, background:C.greenLight, border:`2px solid ${C.green}`, borderRadius:13, padding:"6px 4px", textAlign:"center" }}>
+                      <div style={{ fontSize:12.5, fontWeight:900, color:C.green, lineHeight:1.25 }}>✓ En el pedido</div>
+                      <div style={{ fontSize:11.5, fontWeight:800, color:C.green, opacity:.9, lineHeight:1.3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {cantDe(g.key)} unidad{cantDe(g.key) === 1 ? "" : "es"} · {fmt((+g.price || 0) * cantDe(g.key))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => ajustar(g.key, 1)}
+                      title="Agregar una unidad"
+                      style={{ width:42, flexShrink:0, borderRadius:13, border:`2px solid ${C.green}`, background:C.green, color:"white", fontSize:21, fontWeight:900, lineHeight:1, cursor:"pointer", fontFamily:"inherit" }}
+                    >＋</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => alternarPedido(g)}
+                    title="Juntar esta prenda para pedirla por WhatsApp"
+                    style={{ width:"100%", marginTop:12, padding:"11px 12px", borderRadius:13, cursor:"pointer", fontFamily:"inherit", fontWeight:900, fontSize:13.5, border:`2px solid ${C.green + "90"}`, background:"transparent", color:C.green }}
+                  >
+                    ＋ Añadir al pedido
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -804,25 +837,29 @@ function PublicCatalog() {
           <div style={{ maxWidth:980, margin:"0 auto", padding:"10px 12px", paddingBottom:"calc(10px + env(safe-area-inset-bottom))" }}>
             {/* Prendas elegidas, una por una */}
             <div style={{ maxHeight:Math.min(pedido.length, 3) * 36 + 8, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
-              {pedido.map((x, i) => (
-                <div key={x.key} style={{ display:"flex", alignItems:"center", gap:8, height:36, borderBottom:"1px solid rgba(255,255,255,.09)" }}>
-                  <span style={{ width:20, flexShrink:0, color:"rgba(255,255,255,.45)", fontWeight:900, fontSize:12, textAlign:"center" }}>{i + 1}</span>
-                  <span style={{ flex:1, minWidth:0, fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                    {x.name}{x.color ? ` · ${x.color}` : ""}{tallaDe(x) ? ` · T${tallaDe(x)}` : ""}
-                  </span>
-                  <span style={{ flexShrink:0, fontWeight:900, fontSize:13, color:"#9BE7CD" }}>{fmt(x.price)}</span>
-                  <button
-                    onClick={() => setPedido(prev => prev.filter(p => p.key !== x.key))}
-                    title="Quitar esta prenda del pedido"
-                    style={{ width:26, height:26, flexShrink:0, borderRadius:8, background:"rgba(255,255,255,.12)", border:"none", color:"rgba(255,255,255,.85)", fontSize:13, cursor:"pointer", fontFamily:"inherit" }}
-                  >✕</button>
-                </div>
-              ))}
+              {pedido.map((x, i) => {
+                const n = x.qty || 1;
+                return (
+                  <div key={x.key} style={{ display:"flex", alignItems:"center", gap:8, height:36, borderBottom:"1px solid rgba(255,255,255,.09)" }}>
+                    <span style={{ width:20, flexShrink:0, color:"rgba(255,255,255,.45)", fontWeight:900, fontSize:12, textAlign:"center" }}>{i + 1}</span>
+                    <span style={{ flex:1, minWidth:0, fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {x.name}{x.color ? ` · ${x.color}` : ""}{tallaDe(x) ? ` · T${tallaDe(x)}` : ""}
+                    </span>
+                    {n > 1 && <span style={{ flexShrink:0, fontWeight:900, fontSize:12, color:"rgba(255,255,255,.6)" }}>×{n}</span>}
+                    <span style={{ flexShrink:0, fontWeight:900, fontSize:13, color:"#9BE7CD" }}>{fmt((+x.price || 0) * n)}</span>
+                    <button
+                      onClick={() => setPedido(prev => prev.filter(p => p.key !== x.key))}
+                      title="Quitar esta prenda del pedido"
+                      style={{ width:26, height:26, flexShrink:0, borderRadius:8, background:"rgba(255,255,255,.12)", border:"none", color:"rgba(255,255,255,.85)", fontSize:13, cursor:"pointer", fontFamily:"inherit" }}
+                    >✕</button>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Sumatoria */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6, padding:"9px 0", borderTop:"1.5px solid rgba(255,255,255,.22)", fontWeight:900, fontSize:14.5 }}>
-              <span>TOTAL · {pedido.length} prenda{pedido.length === 1 ? "" : "s"}</span>
+              <span>TOTAL · {unidades} unidad{unidades === 1 ? "" : "es"}</span>
               <span style={{ color:"#00E0A8" }}>{fmt(totalPedido)}</span>
             </div>
 
@@ -1514,6 +1551,12 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   // Guarda la referencia: datos base a todas sus variantes, nuevas se agregan, quitadas se eliminan
   const saveEdit = ({ refFields, vars }) => {
     const oldName = editGroup.name, oldBrand = editGroup.brand || "";
+    // Datos de referencia que se aplican a TODAS sus variantes (incluye categorías)
+    const cf = {
+      name: refFields.name, brand: refFields.brand, category: refFields.category,
+      categoryId: refFields.categoryId || "", subcategory: refFields.subcategory || "",
+      subcategoryId: refFields.subcategoryId || "",
+    };
     setProducts(prev => {
       const refOldIds = new Set(prev.filter(p => p.name === oldName && (p.brand || "") === oldBrand).map(p => String(p.id)));
       const keptIds = new Set(vars.map(v => String(v.id)));
@@ -1526,12 +1569,12 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
         if (nv) {
           // Si borraron el SKU de una variante que ya tenía, se conserva el suyo
           const sku = codLimpio(nv.sku) ? nv.sku : (codLimpio(p.sku) ? p.sku : "");
-          return { ...p, ...nv, sku, name: refFields.name, brand: refFields.brand, category: refFields.category };
+          return { ...p, ...nv, sku, ...cf };
         }
-        if (refOldIds.has(id)) return { ...p, name: refFields.name, brand: refFields.brand, category: refFields.category };
+        if (refOldIds.has(id)) return { ...p, ...cf };
         return p;
       });
-      const news = vars.filter(v => !existing.has(String(v.id))).map(v => ({ ...v, name: refFields.name, brand: refFields.brand, category: refFields.category }));
+      const news = vars.filter(v => !existing.has(String(v.id))).map(v => ({ ...v, ...cf }));
       // Toda variante nueva sin SKU recibe el código que Stokly imprime en su etiqueta
       return conCodigos([...next, ...news]);
     });
@@ -2387,6 +2430,120 @@ function OptionPickerModal({ title, subtitle, options, onClose }) {
   );
 }
 
+// ── 🔎 Selector con buscador (categorías / subcategorías) ─────────────────────
+// Panel con lista desplazable, campo de búsqueda en vivo (sin distinguir
+// mayúsculas de minúsculas) y opción de crear una nueva en el momento.
+function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiquetaCrear, tituloCrear, onCrear, deshabilitado }) {
+  const [abierto, setAbierto] = useState(false);
+  const [q, setQ] = useState("");
+  const [creando, setCreando] = useState(false);
+  const [nuevo, setNuevo] = useState("");
+  const [msg, setMsg] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const elegida = opciones.find(o => String(o.id) === String(valor));
+  const texto = q.trim().toLowerCase();
+  const filtradas = texto ? opciones.filter(o => String(o.name || "").toLowerCase().includes(texto)) : opciones;
+
+  const cerrar = () => { setAbierto(false); setQ(""); setCreando(false); setNuevo(""); setMsg(""); };
+
+  const crear = async () => {
+    if (guardando) return;
+    setGuardando(true);
+    setMsg("");
+    const r = await onCrear(nuevo);
+    setGuardando(false);
+    if (!r || !r.ok) { setMsg("⚠️ " + ((r && r.error) || "No se pudo crear")); return; }
+    onElegir(r.id);
+    cerrar();
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { if (!deshabilitado) setAbierto(true); }}
+        disabled={deshabilitado}
+        className="stk-input"
+        style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, textAlign:"left", width:"100%", cursor:deshabilitado ? "not-allowed" : "pointer", opacity:deshabilitado ? .6 : 1 }}
+      >
+        <span style={{ color:elegida ? C.text : C.muted, fontWeight:elegida ? 800 : 600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+          {elegida ? elegida.name : placeholder}
+        </span>
+        <span style={{ color:C.muted, fontWeight:900, flexShrink:0 }}>▼</span>
+      </button>
+
+      {abierto && (
+        <div className="overlay" onClick={e => e.target === e.currentTarget && cerrar()} style={{ zIndex:320 }}>
+          <div className="sheet">
+            <div className="handle" />
+            <div style={{ fontWeight:900, fontSize:18, marginBottom:10 }}>{titulo}</div>
+            <input
+              className="stk-input"
+              autoFocus
+              placeholder="🔍 Buscar…"
+              value={q}
+              onChange={e => { setQ(e.target.value); setMsg(""); }}
+            />
+            <div style={{ maxHeight:"44vh", overflowY:"auto", WebkitOverflowScrolling:"touch", margin:"10px 0 0" }}>
+              {filtradas.map(o => {
+                const sel = String(o.id) === String(valor);
+                return (
+                  <button
+                    key={o.id}
+                    onClick={() => { onElegir(o.id); cerrar(); }}
+                    style={{ display:"flex", width:"100%", alignItems:"center", justifyContent:"space-between", gap:8, background:sel ? C.greenLight : C.bg, border:`1.5px solid ${sel ? C.green : C.border}`, borderRadius:12, padding:"12px 14px", marginBottom:7, cursor:"pointer", fontFamily:"inherit", fontWeight:800, fontSize:14, color:C.text, textAlign:"left" }}
+                  >
+                    <span>{o.name}</span>
+                    {sel && <span style={{ color:C.green, fontWeight:900, flexShrink:0 }}>✓</span>}
+                  </button>
+                );
+              })}
+              {!filtradas.length && (
+                <div style={{ color:C.muted, fontWeight:700, fontSize:13, padding:"8px 2px", lineHeight:1.5 }}>
+                  😕 Nada coincide con «{q}»<br />
+                  <span style={{ fontSize:11.5 }}>Puedes crearla aquí abajo 👇</span>
+                </div>
+              )}
+            </div>
+
+            {creando ? (
+              <div style={{ marginTop:10, background:C.blueLight, borderRadius:14, padding:"12px 14px" }}>
+                <div style={{ fontSize:11, fontWeight:900, color:C.blue, textTransform:"uppercase", marginBottom:6 }}>{tituloCrear}</div>
+                <input
+                  className="stk-input"
+                  autoFocus
+                  placeholder="Nombre…"
+                  value={nuevo}
+                  onChange={e => { setNuevo(e.target.value); setMsg(""); }}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); crear(); } }}
+                />
+                {msg && <div style={{ fontSize:12, fontWeight:800, color:C.red, marginTop:6, lineHeight:1.4 }}>{msg}</div>}
+                <div style={{ display:"flex", gap:8, marginTop:10 }}>
+                  <button type="button" className="btn-outline" onClick={() => { setCreando(false); setNuevo(""); setMsg(""); }} style={{ flex:1 }}>Cancelar</button>
+                  <button type="button" className="btn-main" onClick={crear} style={{ flex:1, opacity:guardando ? .7 : 1 }}>{guardando ? "⏳ Guardando…" : "Crear categoría"}</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setCreando(true); setMsg(""); }}
+                style={{ width:"100%", marginTop:4, background:"transparent", border:`1.5px dashed ${C.green}`, color:C.green, borderRadius:12, padding:"12px 14px", fontWeight:900, fontSize:13.5, cursor:"pointer", fontFamily:"inherit" }}
+              >
+                {etiquetaCrear}
+              </button>
+            )}
+
+            <div style={{ marginTop:12 }}>
+              <button type="button" className="btn-outline" onClick={cerrar} style={{ width:"100%" }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Modal para editar una referencia: cambia datos base y agrega/quita tallas y colores
 function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) {
   const [rf, setRf] = useState({ name: group.name, brand: group.brand || "", category: group.category || "Otro" });
@@ -2396,6 +2553,33 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
   const [fotoColor, setFotoColor] = useState(null); // color al que se le agregan fotos
   const [visor, setVisor] = useState(null);         // 🔍 fotos a pantalla completa {fotos:[], i}
   const photoRef = useRef(null);
+
+  // 📂 Categorías y subcategorías del panel
+  const cats = useCategorias(workspaceId);
+  const [catId, setCatId] = useState(group.categoryId ? String(group.categoryId) : "");
+  const [subId, setSubId] = useState(group.subcategoryId ? String(group.subcategoryId) : "");
+  const subsDeCat = cats.subcategorias.filter(s => String(s.category_id) === String(catId));
+  const nombreCat = (cats.categorias.find(c => String(c.id) === String(catId)) || {}).name || "";
+  const nombreSub = (cats.subcategorias.find(s => String(s.id) === String(subId)) || {}).name || "";
+
+  // Referencias antiguas: si solo tienen el texto de categoría, la emparejamos
+  // con la categoría real para que no se pierda nada al editar.
+  useEffect(() => {
+    if (catId || !cats.categorias.length) return;
+    const t = String(group.category || "").trim().toLowerCase();
+    const c = cats.categorias.find(x => String(x.name).toLowerCase() === t)
+      || cats.categorias.find(x => ["otro", "otros"].includes(t) && String(x.name).toLowerCase() === "otros");
+    if (c) { setCatId(String(c.id)); setRf(p => ({ ...p, category: c.name })); }
+  }, [cats.categorias, catId, group.category]);
+
+  // Al cambiar la categoría se limpia la subcategoría (nunca combinaciones inválidas)
+  const elegirCat = (id) => {
+    setCatId(id);
+    setSubId("");
+    setErr("");
+    const c = cats.categorias.find(x => String(x.id) === String(id));
+    if (c) setRf(p => ({ ...p, category: c.name }));
+  };
 
   // 📸 Agrega varias fotos al color elegido (en todas sus variantes)
   async function pickColorPhotos(e) {
@@ -2428,8 +2612,22 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (!rf.name.trim()) { setErr("El nombre de la referencia es obligatorio"); return; }
     if (!vars.length) { setErr("Debe quedar al menos una variante"); return; }
     if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
+    if (!catId) { setErr("Elige la categoría"); return; }
+    if (!subId) { setErr("Elige la subcategoría"); return; }
+    if (nombreCat && subsDeCat.length && !subsDeCat.some(s => String(s.id) === String(subId))) {
+      setErr("La subcategoría no pertenece a la categoría elegida"); return;
+    }
     setErr("");
-    onSave({ refFields: rf, vars });
+    onSave({
+      refFields: {
+        ...rf,
+        category: nombreCat || rf.category,
+        categoryId: catId,
+        subcategory: nombreSub,
+        subcategoryId: subId,
+      },
+      vars,
+    });
   }
 
   return (
@@ -2452,10 +2650,32 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
             <input className="stk-input" value={rf.brand} onChange={e => setRf(p => ({ ...p, brand: e.target.value }))} placeholder="Nike" />
           </div>
           <div>
-            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Categoría</div>
-            <select className="stk-input" value={rf.category} onChange={e => setRf(p => ({ ...p, category: e.target.value }))}>
-              {["Ropa","Calzado","Accesorios","Otro"].map(c => <option key={c}>{c}</option>)}
-            </select>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Categoría *</div>
+            <SelectorBuscador
+              titulo="Seleccionar categoría"
+              opciones={cats.categorias}
+              valor={catId}
+              onElegir={elegirCat}
+              placeholder={cats.cargando ? "⏳ Cargando…" : "Seleccionar categoría ▼"}
+              etiquetaCrear="+ Crear nueva categoría"
+              tituloCrear="Nueva categoría"
+              onCrear={cats.crearCategoria}
+            />
+          </div>
+          <div style={{ gridColumn:"span 2" }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Subcategoría *</div>
+            <SelectorBuscador
+              titulo="Seleccionar subcategoría"
+              opciones={subsDeCat}
+              valor={subId}
+              onElegir={id => { setSubId(id); setErr(""); }}
+              placeholder={catId ? "Seleccionar subcategoría ▼" : "Primero elige una categoría"}
+              etiquetaCrear="+ Crear nueva subcategoría"
+              tituloCrear="Nueva subcategoría"
+              onCrear={n => cats.crearSubcategoria(catId, n)}
+              deshabilitado={!catId}
+            />
+            {cats.error && <div style={{ fontSize:11.5, fontWeight:800, color:C.red, marginTop:6, lineHeight:1.4 }}>⚠️ {cats.error}</div>}
           </div>
         </div>
 
@@ -2555,6 +2775,19 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
 
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",barcode:"",category:"Ropa" });
+  // 📂 Categorías y subcategorías del panel
+  const cats = useCategorias(workspaceId);
+  const [catId, setCatId] = useState("");
+  const [subId, setSubId] = useState("");
+  const subsDeCat = cats.subcategorias.filter(s => String(s.category_id) === String(catId));
+  const nombreCat = (cats.categorias.find(c => String(c.id) === String(catId)) || {}).name || "";
+  const nombreSub = (cats.subcategorias.find(s => String(s.id) === String(subId)) || {}).name || "";
+  const elegirCat = (id) => {
+    setCatId(id);
+    setSubId(""); // al cambiar la categoría se limpia la subcategoría
+    const c = cats.categorias.find(x => String(x.id) === String(id));
+    if (c) setF(p => ({ ...p, category: c.name }));
+  };
   const [visor, setVisor] = useState(null); // 🔍 foto a pantalla completa
   const [image, setImage] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -2576,9 +2809,12 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     const miss = [];
     if (!f.name.trim()) miss.push("Nombre");
     if (f.stock === "" || f.stock == null) miss.push("Stock");
+    if (!catId) miss.push("Categoría");
+    if (!subId) miss.push("Subcategoría");
     if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
     setErr("");
-    onSave({ ...f, id:newId(), stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[f.category]||"📦", image });
+    const catFinal = nombreCat || f.category || "Otro";
+    onSave({ ...f, id:newId(), category: catFinal, categoryId: catId, subcategory: nombreSub, subcategoryId: subId, stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[catFinal]||"📦", image });
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -2593,10 +2829,32 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
             </div>
           ))}
           <div style={{ gridColumn:"span 2" }}>
-            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Categoría</div>
-            <select className="stk-input" value={f.category} onChange={e=>setF(p=>({...p,category:e.target.value}))}>
-              {["Ropa","Calzado","Accesorios","Otro"].map(c=><option key={c}>{c}</option>)}
-            </select>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Categoría *</div>
+            <SelectorBuscador
+              titulo="Seleccionar categoría"
+              opciones={cats.categorias}
+              valor={catId}
+              onElegir={elegirCat}
+              placeholder={cats.cargando ? "⏳ Cargando…" : "Seleccionar categoría ▼"}
+              etiquetaCrear="+ Crear nueva categoría"
+              tituloCrear="Nueva categoría"
+              onCrear={cats.crearCategoria}
+            />
+          </div>
+          <div style={{ gridColumn:"span 2", marginTop:-4 }}>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Subcategoría *</div>
+            <SelectorBuscador
+              titulo="Seleccionar subcategoría"
+              opciones={subsDeCat}
+              valor={subId}
+              onElegir={setSubId}
+              placeholder={catId ? "Seleccionar subcategoría ▼" : "Primero elige una categoría"}
+              etiquetaCrear="+ Crear nueva subcategoría"
+              tituloCrear="Nueva subcategoría"
+              onCrear={n => cats.crearSubcategoria(catId, n)}
+              deshabilitado={!catId}
+            />
+            {cats.error && <div style={{ fontSize:11.5, fontWeight:800, color:C.red, marginTop:6, lineHeight:1.4 }}>⚠️ {cats.error}</div>}
           </div>
         </div>
         <div style={{ background:C.greenLight, borderRadius:12, padding:"9px 12px", fontSize:11.5, fontWeight:700, color:C.text, marginTop:-6, marginBottom:16, lineHeight:1.55 }}>

@@ -118,6 +118,9 @@ export const productFromRow = (r) => ({
   color: r.color || "",
   size: r.size == null ? "" : String(r.size),
   category: r.category || "Otro",
+  categoryId: r.category_id || "",
+  subcategory: r.subcategory || "",
+  subcategoryId: r.subcategory_id || "",
   stock: Number(r.stock) || 0,
   minStock: Number(r.min_stock) || 0,
   price: Number(r.price) || 0,
@@ -137,6 +140,9 @@ export const productToRow = (p, uid, ws) => ({
   color: p.color || "",
   size: p.size == null ? "" : String(p.size),
   category: p.category || "Otro",
+  category_id: p.categoryId || null,
+  subcategory: p.subcategory || "",
+  subcategory_id: p.subcategoryId || null,
   stock: Math.round(+p.stock) || 0,
   min_stock: Math.round(+p.minStock) || 0,
   price: +p.price || 0,
@@ -283,3 +289,109 @@ export const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
     : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+
+// ══════════════════════════════════════════════════════════════
+//  CATEGORÍAS Y SUBCATEGORÍAS (por panel)
+// ══════════════════════════════════════════════════════════════
+// Catálogo inicial de Stokly para tiendas de moda. Cada panel lo
+// recibe en su primera visita (si todavía no tiene categorías).
+export const CATEGORIAS_BASE = [
+  { name: "Ropa", subs: ["Camisetas","Blusas","Camisas","Vestidos","Conjuntos","Pantalones","Jeans","Faldas","Shorts","Bermudas","Chaquetas","Buzos y Suéteres","Ropa deportiva","Ropa interior","Pijamas","Ropa de bebé","Ropa infantil"] },
+  { name: "Calzado", subs: ["Tenis","Zapatos","Sandalias","Tacones","Botas","Botines","Mocasines","Pantuflas","Chanclas","Calzado infantil"] },
+  { name: "Bolsos y Carteras", subs: ["Bolsos","Carteras","Morrales","Maletines","Riñoneras","Canguros","Bolsos deportivos","Bolsos de viaje"] },
+  { name: "Accesorios", subs: ["Gorras","Sombreros","Cinturones","Bufandas","Pañuelos","Guantes","Corbatas","Accesorios para el cabello"] },
+  { name: "Joyería y Bisutería", subs: ["Collares","Pulseras","Aretes","Anillos","Tobilleras","Broches"] },
+  { name: "Belleza y Cuidado Personal", subs: ["Perfumes","Cosméticos","Cuidado capilar","Cuidado corporal"] },
+  { name: "Otros", subs: ["Otros"] },
+];
+
+const norm = (s) => String(s || "").trim().toLowerCase();
+
+export function useCategorias(workspaceId) {
+  const [categorias, setCategorias] = useState([]);
+  const [subcategorias, setSubcategorias] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+
+  const cargar = async () => {
+    if (!workspaceId) { setCategorias([]); setSubcategorias([]); return; }
+    setCargando(true);
+    setError("");
+    try {
+      const ver = (r) => { if (r.error) throw r.error; return r.data || []; };
+      let cats = await ver(
+        await supabase.from("categories").select("id,name,active").eq("workspace_id", workspaceId).order("name")
+      );
+
+      // Primera vez en este panel → sembramos el catálogo inicial de Stokly
+      if (!cats.length) {
+        await ver(await supabase
+          .from("categories")
+          .upsert(CATEGORIAS_BASE.map(c => ({ workspace_id: workspaceId, name: c.name })),
+                  { onConflict: "workspace_id,name", ignoreDuplicates: true }));
+        cats = await ver(
+          await supabase.from("categories").select("id,name,active").eq("workspace_id", workspaceId).order("name")
+        );
+        const idPorNombre = {};
+        cats.forEach(c => { idPorNombre[norm(c.name)] = c.id; });
+        const filas = [];
+        CATEGORIAS_BASE.forEach(c => (c.subs || []).forEach(s => {
+          const catId = idPorNombre[norm(c.name)];
+          if (catId) filas.push({ workspace_id: workspaceId, category_id: catId, name: s });
+        }));
+        if (filas.length) {
+          await ver(await supabase
+            .from("subcategories")
+            .upsert(filas, { onConflict: "category_id,name", ignoreDuplicates: true }));
+        }
+      }
+
+      const subs = await ver(
+        await supabase.from("subcategories").select("id,category_id,name,active").eq("workspace_id", workspaceId).order("name")
+      );
+      setCategorias(cats);
+      setSubcategorias(subs);
+    } catch (e) {
+      console.error("[stokly] categorías:", e.message || e);
+      setError("No se pudieron cargar las categorías — revisa tu conexión.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  useEffect(() => {
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  const duplicado = (lista, nombre) => lista.some(x => norm(x.name) === norm(nombre));
+
+  const crearCategoria = async (nombre) => {
+    const n = String(nombre || "").trim();
+    if (!n) return { ok: false, error: "Escribe el nombre de la categoría" };
+    if (duplicado(categorias, n)) return { ok: false, error: "Ya existe una categoría con ese nombre" };
+    const { data, error: err } = await supabase
+      .from("categories").insert({ workspace_id: workspaceId, name: n }).select("id,name").single();
+    if (err) return { ok: false, error: err.code === "23505" ? "Ya existe una categoría con ese nombre" : "No se pudo guardar — revisa tu conexión" };
+    setCategorias(cs => [...cs, data].sort((a, b) => a.name.localeCompare(b.name, "es")));
+    return { ok: true, id: data.id };
+  };
+
+  const crearSubcategoria = async (categoryId, nombre) => {
+    const n = String(nombre || "").trim();
+    if (!categoryId) return { ok: false, error: "Primero elige una categoría" };
+    if (!n) return { ok: false, error: "Escribe el nombre de la subcategoría" };
+    if (duplicado(subcategorias.filter(s => String(s.category_id) === String(categoryId)), n)) {
+      return { ok: false, error: "Ya existe esa subcategoría en esta categoría" };
+    }
+    const { data, error: err } = await supabase
+      .from("subcategories")
+      .insert({ workspace_id: workspaceId, category_id: categoryId, name: n })
+      .select("id,category_id,name").single();
+    if (err) return { ok: false, error: err.code === "23505" ? "Ya existe esa subcategoría" : "No se pudo guardar — revisa tu conexión" };
+    setSubcategorias(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name, "es")));
+    return { ok: true, id: data.id };
+  };
+
+  return { categorias, subcategorias, cargando, error, crearCategoria, crearSubcategoria, recargar: cargar };
+}
