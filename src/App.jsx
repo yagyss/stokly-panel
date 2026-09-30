@@ -125,7 +125,8 @@ const parseCSV = (text) => {
     const vals = splitLine(line).map(v=>v.replace(/"/g,"").trim());
     const get = k => cols[k]!==-1 ? (vals[cols[k]]||"") : "";
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
-    if (!name||!sku||!stockRaw) return null;
+    // El SKU es opcional: si no está, Stokly le crea el código al importar
+    if (!name||!stockRaw) return null;
     const category=get("category")||"Otro";
     return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"",barcode:get("barcode")||"" };
   }).filter(Boolean);
@@ -150,6 +151,29 @@ const normalizarFotoURL = (v) => {
 const imgsDe = (v) => String(v || "").split("||").map(s => s.trim()).filter(Boolean);
 const juntarImgs = (arr) => [...new Set(arr.map(s => String(s).trim()).filter(Boolean))].join("||");
 const primeraImg = (v) => imgsDe(v)[0] || "";
+
+// 🏷️ SKU y código de barras son OPCIONALES: si el usuario no tiene esos datos,
+// Stokly le crea un código único. Es el que se imprime en la etiqueta (nombre,
+// color y talla) y el que reconoce el escáner al hacer inventario.
+const codLimpio = (v) => String(v || "").trim().toUpperCase();
+const codNuevo = () => "STK-" + (Math.random().toString(36).slice(2, 8) + "000000").slice(0, 6).toUpperCase();
+const generarSku = (tomados) => {
+  const t = new Set((tomados || []).map(codLimpio).filter(Boolean));
+  for (let i = 0; i < 999; i++) { const c = codNuevo(); if (!t.has(c)) return c; }
+  return "STK-" + Date.now().toString(36).toUpperCase();
+};
+// Devuelve la lista completa con código en los que no tengan (los que ya tienen no cambian)
+const conCodigos = (lista, extra = []) => {
+  const tomados = [...(extra || []), ...lista].map(p => p && p.sku);
+  return lista.map(p => {
+    if (codLimpio(p.sku)) return p;
+    const c = generarSku(tomados);
+    tomados.push(c);
+    return { ...p, sku: c };
+  });
+};
+// Respaldo para productos antiguos guardados sin SKU: se deduce del id y también escanea
+const codInterno = (p) => String((p && p.id) || "").replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase();
 
 // Carga perezosa de JsBarcode — solo cuando abres el generador de etiquetas
 let jsbCargas = null;
@@ -186,6 +210,7 @@ function buscarPorCodigo(products, codeRaw) {
   if (!p) p = products.find(x => String(x.barcode || "").trim().toUpperCase() === c);
   const limpio = (s) => String(s || "").toUpperCase().replace(/[\s-]/g, "");
   if (!p) p = products.find(x => limpio(x.sku) === limpio(c)) || products.find(x => x.barcode && limpio(x.barcode) === limpio(c));
+  if (!p) p = products.find(x => codInterno(x) && codInterno(x) === c);
   return p || null;
 }
 
@@ -430,7 +455,8 @@ function ShareModal({ workspaceId, sizes, onClose, showToast }) {
 
 // ── 🏷️ ETIQUETAS imprimibles con código de barras ────────────────────────────
 function Etiqueta({ p }) {
-  const code = String((p.barcode || p.sku || "").trim());
+  // Código de la etiqueta: el que dio el usuario (barras/SKU) o el que creó Stokly
+  const code = String((p.barcode || p.sku || "").trim()) || codInterno(p);
   return (
     <div className="etq">
       <div className="etq-n">{p.name}</div>
@@ -487,7 +513,8 @@ function LabelsModal({ products, onClose, showToast }) {
         <div className="handle" />
         <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>🏷️ Etiquetas con código de barras</div>
         <div style={{ fontSize:13, color:C.muted, fontWeight:600, marginBottom:14, lineHeight:1.5 }}>
-          Marca las prendas y imprime sus etiquetas para poder escanearlas con el 📷 de stokly.
+          Marca las prendas y imprime sus etiquetas para poder escanearlas con el 📷 de stokly.<br />
+          🏷️ Cada etiqueta sale con <b style={{ color:C.text }}>nombre · color · talla</b> y su código — <b style={{ color:C.text }}>si el producto no tiene SKU, Stokly le pone uno igual</b>.
         </div>
         <input className="stk-input" placeholder="🔍 Busca la prenda (nombre, talla, SKU…)" value={b} onChange={e => setB(e.target.value)} style={{ marginBottom:10 }} />
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:8, flexWrap:"wrap" }}>
@@ -503,7 +530,7 @@ function LabelsModal({ products, onClose, showToast }) {
               <input type="checkbox" checked={sel.has(String(p.id))} onChange={() => toggle(p.id)} style={{ width:18, height:18, accentColor:"#00C896" }} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:800, fontSize:13.5 }}>{p.emoji} {p.name}</div>
-                <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.color} · T{p.size} · {p.sku}</div>
+                <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.color} · T{p.size} · {p.sku || codInterno(p)}</div>
               </div>
             </label>
           ))}
@@ -1045,7 +1072,13 @@ export default function Stokly() {
         ))}
       </div>
 
-      {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => { setProducts(prev=>[...prev,p]); setModal(null); showToast("✅ Producto agregado"); }} />}
+      {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => {
+        const auto = !codLimpio(p.sku);
+        const nuevo = auto ? { ...p, sku: generarSku(products.map(x => x.sku)) } : p;
+        setProducts(prev => [...prev, nuevo]);
+        setModal(null);
+        showToast(auto ? `✅ Producto agregado · etiqueta ${nuevo.sku}` : "✅ Producto agregado");
+      }} />}
       {modal==="addChoice" && (
         <OptionPickerModal
           title="➕ Agregar producto"
@@ -1072,18 +1105,26 @@ export default function Stokly() {
         />
       )}
       {modal==="import"  && <ImportModal    importView={importView} workspaceId={workspaceId} onClose={() => setModal(null)} onImport={(newP,mode,aviso) => {
-        let fotoN = 0;
-        if(mode==="replace") { setProducts(newP); }
+        let fotoN = 0, autoN = 0;
+        // Coincide por SKU; si el archivo no trae SKU, por nombre+marca+color+talla
+        const clave = x => [x.name, x.brand||"", x.color||"", x.size||""].map(v=>String(v).trim().toLowerCase()).join("|");
+        const mismo = (ex, p) => { const cod = codLimpio(p.sku); return cod ? codLimpio(ex.sku) === cod : clave(ex) === clave(p); };
+        if(mode==="replace") {
+          autoN = newP.filter(p => !codLimpio(p.sku)).length;
+          setProducts(conCodigos(newP));
+        }
         else {
           const upd = new Map(); const add = [];
-          newP.forEach(p => { const ex = products.find(x => x.sku === p.sku);
+          newP.forEach(p => { const ex = products.find(x => mismo(x, p));
             if(!ex) add.push(p);
             else if(p.image && !ex.image){ upd.set(ex.id, {...ex, image:p.image}); fotoN++; }
           });
-          setProducts(prev => [...prev.map(x => upd.get(x.id) || x), ...add]);
+          autoN = add.filter(p => !codLimpio(p.sku)).length;
+          const listos = conCodigos(add, products);
+          setProducts(prev => [...prev.map(x => upd.get(x.id) || x), ...listos]);
         }
         setModal(null);
-        showToast(`✅ ${newP.length} importados${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
+        showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
       }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
@@ -1323,12 +1364,17 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       let next = prev.filter(p => !removedIds.has(String(p.id))).map(p => {
         const id = String(p.id);
         const nv = varMap.get(id);
-        if (nv) return { ...p, ...nv, name: refFields.name, brand: refFields.brand, category: refFields.category };
+        if (nv) {
+          // Si borraron el SKU de una variante que ya tenía, se conserva el suyo
+          const sku = codLimpio(nv.sku) ? nv.sku : (codLimpio(p.sku) ? p.sku : "");
+          return { ...p, ...nv, sku, name: refFields.name, brand: refFields.brand, category: refFields.category };
+        }
         if (refOldIds.has(id)) return { ...p, name: refFields.name, brand: refFields.brand, category: refFields.category };
         return p;
       });
       const news = vars.filter(v => !existing.has(String(v.id))).map(v => ({ ...v, name: refFields.name, brand: refFields.brand, category: refFields.category }));
-      return [...next, ...news];
+      // Toda variante nueva sin SKU recibe el código que Stokly imprime en su etiqueta
+      return conCodigos([...next, ...news]);
     });
     setEditGroup(null);
     showToast("✏️ Referencia actualizada");
@@ -1360,10 +1406,12 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           onScan={(code) => {
             const p = buscarPorCodigo(products, code);
             if (p) {
-              setSearch(p.sku);
+              // Filtra por el código; si es un producto sin SKU, por su nombre/color/talla
+              setSearch(String(p.sku || "").trim() || [p.name, p.color, p.size].filter(Boolean).join(" "));
               setFilterCat("Todos");
+              setFilterSize("Todas");
               setScanOpen(false);
-              showToast(`✅ ${p.name}${p.color ? " · " + p.color : ""}${p.size ? " · T" + p.size : ""} · SKU ${p.sku}`);
+              showToast(`✅ ${p.name}${p.color ? " · " + p.color : ""}${p.size ? " · T" + p.size : ""} · ${p.sku ? "SKU " + p.sku : "🏷️ Código " + codInterno(p)}`);
               return null;
             }
             return `El código "${code}" no está en tu inventario`;
@@ -2217,8 +2265,6 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
   function save() {
     if (!rf.name.trim()) { setErr("El nombre de la referencia es obligatorio"); return; }
     if (!vars.length) { setErr("Debe quedar al menos una variante"); return; }
-    const noSku = vars.findIndex(v => !String(v.sku || "").trim());
-    if (noSku >= 0) { setErr(`Falta el SKU de la variante ${noSku + 1} — toda variante necesita SKU único`); return; }
     if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
     setErr("");
     onSave({ refFields: rf, vars });
@@ -2271,7 +2317,7 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
                   {[
                     { k:"color",   ph:"Color",     v:v.color },
                     { k:"size",    ph:"Talla",     v:v.size },
-                    { k:"sku",     ph:"SKU *",     v:v.sku },
+                    { k:"sku",     ph:"SKU (opcional)", v:v.sku },
                     { k:"barcode", ph:"Código de barras", v:v.barcode },
                     { k:"stock",   ph:"Stock *",   v:v.stock,   type:"number" },
                     { k:"minStock",ph:"Mín",       v:v.minStock,type:"number" },
@@ -2295,6 +2341,9 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
         </div>
 
         {/* 📸 Fotos por color de la referencia (varias por color) */}
+        <div style={{ background:C.greenLight, borderRadius:12, padding:"8px 12px", fontSize:11.5, fontWeight:700, color:C.text, marginTop:-6, marginBottom:14, lineHeight:1.5 }}>
+          🏷️ El <b>SKU es opcional</b>: si lo dejas vacío, Stokly le crea el código a esa variante y así tiene su etiqueta con nombre, color y talla.
+        </div>
         <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", margin:"2px 0 8px" }}>📸 Fotos por color</div>
         <input ref={photoRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={pickColorPhotos} />
         {[...new Set(vars.map(v => v.color || "—"))].map(color => {
@@ -2361,7 +2410,6 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     if (uploading) { setErr("⏳ Espera a que termine de subir la foto"); return; }
     const miss = [];
     if (!f.name.trim()) miss.push("Nombre");
-    if (!f.sku.trim()) miss.push("SKU");
     if (f.stock === "" || f.stock == null) miss.push("Stock");
     if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
     setErr("");
@@ -2373,7 +2421,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
         <div className="handle" />
         <div style={{ fontWeight:900,fontSize:20,marginBottom:20 }}>📦 Nuevo producto</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-          {[{label:"Nombre *",key:"name",ph:"Camiseta Básica",full:true},{label:"SKU *",key:"sku",ph:"CAM-001"},{label:"Código de barras",key:"barcode",ph:"Ej: 7501234567890"},{label:"Marca",key:"brand",ph:"Nike"},{label:"Color",key:"color",ph:"Blanco"},{label:"Talla",key:"size",ph:"M / 42"},{label:"Stock *",key:"stock",ph:"0",type:"number"},{label:"Stock mínimo",key:"minStock",ph:"5",type:"number"},{label:"Precio ($)",key:"price",ph:"0",type:"number"},{label:"Costo ($)",key:"cost",ph:"0",type:"number"}].map(field=>(
+          {[{label:"Nombre *",key:"name",ph:"Camiseta Básica",full:true},{label:"SKU (opcional)",key:"sku",ph:"Déjalo vacío y Stokly lo crea"},{label:"Código de barras (opcional)",key:"barcode",ph:"Ej: 7501234567890"},{label:"Marca",key:"brand",ph:"Nike"},{label:"Color",key:"color",ph:"Blanco"},{label:"Talla",key:"size",ph:"M / 42"},{label:"Stock *",key:"stock",ph:"0",type:"number"},{label:"Stock mínimo",key:"minStock",ph:"5",type:"number"},{label:"Precio ($)",key:"price",ph:"0",type:"number"},{label:"Costo ($)",key:"cost",ph:"0",type:"number"}].map(field=>(
             <div key={field.key} style={{ gridColumn:field.full?"span 2":"span 1" }}>
               <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>{field.label}</div>
               <input className="stk-input" type={field.type||"text"} placeholder={field.ph} value={f[field.key]} onChange={e=>setF(p=>({...p,[field.key]:e.target.value}))} />
@@ -2385,6 +2433,9 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
               {["Ropa","Calzado","Accesorios","Otro"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
+        </div>
+        <div style={{ background:C.greenLight, borderRadius:12, padding:"9px 12px", fontSize:11.5, fontWeight:700, color:C.text, marginTop:-6, marginBottom:16, lineHeight:1.55 }}>
+          🏷️ <b>SKU y código de barras son opcionales.</b> Si los dejas vacíos, Stokly le crea un código a la prenda y con él imprime su etiqueta (nombre · color · talla) para poder escanearla después.
         </div>
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Foto del producto (opcional)</div>
@@ -2604,7 +2655,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       if(t.startsWith("<!DOCTYPE")||t.startsWith("<html"))
         throw new Error("Google devolvió una página, no datos. Comparte la hoja: Compartir → Cualquier persona con el enlace → Lector.");
       const p=parseCSV(text);
-      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Usa encabezados: nombre, sku, stock, precio..."); return; }
+      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Usa encabezados: nombre, stock, precio... (el sku es opcional)"); return; }
       setParsed(p); setStep("preview");
     }catch(err){ setError(err.message||"No se pudo conectar con Google Sheets."); }
     finally{ setLoadingSheet(false); }
@@ -2656,6 +2707,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   }
 
   const conFoto = parsed.filter(p => imgsDe(p.image).length > 0).length;
+  // Filas sin SKU/código → Stokly les crea uno solo y con él sale su etiqueta
+  const sinCod = parsed.filter(p => !codLimpio(p.sku)).length;
   const pendAdj = parsed.filter(p =>
     imgsDe(p.image).some(v => v && !normalizarFotoURL(v) && !fotos[v.split(/[\\/]/).pop().toLowerCase()])
   ).length;
@@ -2684,7 +2737,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
               📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen</b>.<br/>
-              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
+              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · <b style={{ color:C.text }}>la columna sku es opcional</b>: si la dejas vacía, Stokly le crea el código a cada producto para su etiqueta · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
             </div>
             <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
             <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
@@ -2709,7 +2762,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                Encabezados necesarios: <b>nombre, sku, stock</b> (opcionales: marca, color, talla, categoría, precio, costo, mínimo, <b>imagen</b>).<br/>
+                Encabezados necesarios: <b>nombre, stock</b> (opcionales: <b>sku o código</b>, marca, color, talla, categoría, precio, costo, mínimo, <b>imagen</b>).<br/>
+                💡 Si dejas el <b>sku</b> vacío, Stokly le crea el código a cada producto para imprimir su etiqueta.
                 💡 Toma la <b>plantilla</b> de arriba, súbela a Google Sheets y llénala.
               </div>
             </div>
@@ -2720,9 +2774,9 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
         </>}
         {step==="preview"&&<>
           <div style={{ fontWeight:900,fontSize:20,marginBottom:4 }}>✅ Vista previa</div>
-          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
+          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
           <div style={{ display:"flex",gap:10,marginBottom:16 }}>
-            {[{id:"merge",label:"➕ Agregar",desc:"No duplica SKUs"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
+            {[{id:"merge",label:"➕ Agregar",desc:"No duplica productos"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{ flex:1,background:mode===m.id?C.greenLight:C.bg,border:`2px solid ${mode===m.id?C.green:C.border}`,borderRadius:14,padding:12,cursor:"pointer",fontFamily:"inherit" }}>
                 <div style={{ fontWeight:900,fontSize:13,color:mode===m.id?C.green:C.text }}>{m.label}</div>
                 <div style={{ fontSize:11,color:C.muted }}>{m.desc}</div>
@@ -2761,7 +2815,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
                   : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div>
-                  <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}</div>
+                  <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}{p.sku?` · ${p.sku}`:" · 🏷️ Stokly creará el código"}</div>
                   {rotas[i] && <div style={{ fontSize:10.5,color:C.red,fontWeight:800 }}>⚠️ El enlace no carga — adjunta la foto o corrige el enlace</div>}
                   {nombreFoto && !adjunta && !rotas[i] && <div style={{ fontSize:10.5,color:C.orange,fontWeight:800 }}>📎 Falta adjuntar "{nombreFoto}"</div>}
                   {adjunta && <div style={{ fontSize:10.5,color:C.green,fontWeight:800 }}>✅ Foto lista: {nombreFoto}</div>}
