@@ -563,6 +563,38 @@ function LabelsModal({ products, onClose, showToast }) {
   );
 }
 
+// ── 🔍 VISOR DE FOTOS — se abre a pantalla completa al tocar una foto ─────────
+function VisorFotos({ fotos, inicio = 0, onClose }) {
+  const lista = (fotos || []).filter(Boolean);
+  const [i, setI] = useState(Math.min(inicio || 0, Math.max(0, lista.length - 1)));
+  const ir = (d) => setI(x => (x + d + lista.length) % lista.length);
+  useEffect(() => {
+    const h = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); ir(1); }
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); ir(-1); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lista.length]);
+  if (!lista.length) return null;
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.93)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <img src={lista[i]} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:"100%", maxHeight:"82vh", borderRadius:14, objectFit:"contain" }} />
+      {lista.length > 1 && (
+        <>
+          <button onClick={e => { e.stopPropagation(); ir(-1); }} title="Foto anterior" style={{ position:"fixed", left:10, top:"50%", transform:"translateY(-50%)", width:44, height:44, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:24, cursor:"pointer", fontFamily:"inherit" }}>‹</button>
+          <button onClick={e => { e.stopPropagation(); ir(1); }} title="Foto siguiente" style={{ position:"fixed", right:10, top:"50%", transform:"translateY(-50%)", width:44, height:44, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:24, cursor:"pointer", fontFamily:"inherit" }}>›</button>
+          <div onClick={e => e.stopPropagation()} style={{ position:"fixed", bottom:26, left:"50%", transform:"translateX(-50%)", color:"white", fontWeight:800, fontSize:13, background:"rgba(0,0,0,.55)", borderRadius:20, padding:"6px 14px" }}>{i + 1} / {lista.length}</div>
+        </>
+      )}
+      <button onClick={e => { e.stopPropagation(); onClose(); }} title="Cerrar" style={{ position:"fixed", top:14, right:14, width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:18, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
+      <div onClick={e => e.stopPropagation()} style={{ position:"fixed", bottom:26, left:14, color:"rgba(255,255,255,.7)", fontWeight:700, fontSize:11.5, background:"rgba(0,0,0,.4)", borderRadius:16, padding:"5px 11px" }}>Toca fuera de la foto para cerrar</div>
+    </div>
+  );
+}
+
 // ── 📲 CATÁLOGO PÚBLICO — se ve con el link, sin iniciar sesión ──────────────
 function PublicCatalog() {
   const qs = (() => {
@@ -657,12 +689,12 @@ function PublicCatalog() {
           {visibles.map(g => (
             <div key={g.key} className="card" style={{ overflow:"hidden" }}>
               {g.imgs.length ? (
-                <div onClick={() => setFoto({ imgs:g.imgs, i:0 })} style={{ position:"relative", cursor:"zoom-in", height:175, background:C.bg }}>
-                  <img src={g.imgs[0]} alt={g.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                <div onClick={() => setFoto({ imgs:g.imgs, i:0 })} style={{ position:"relative", cursor:"zoom-in", height:205, background:C.bg }}>
+                  <img src={g.imgs[0]} alt={g.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
                   {g.imgs.length > 1 && <span style={{ position:"absolute", top:8, right:8, background:"rgba(0,0,0,.6)", color:"white", borderRadius:20, padding:"3px 9px", fontSize:11, fontWeight:800 }}>📷 {g.imgs.length}</span>}
                 </div>
               ) : (
-                <div style={{ height:110, display:"flex", alignItems:"center", justifyContent:"center", fontSize:44, background:C.bg }}>{g.emoji}</div>
+                <div style={{ height:205, display:"flex", alignItems:"center", justifyContent:"center", fontSize:54, background:C.bg }}>{g.emoji}</div>
               )}
               <div style={{ padding:"12px 14px 14px" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"flex-start" }}>
@@ -1256,6 +1288,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   const [filterSize, setFilterSize] = useState("Todas"); // filtro de talla
   const [shareOpen, setShareOpen] = useState(false); // compartir catálogo (link/WhatsApp)
   const [labelsOpen, setLabelsOpen] = useState(false); // imprimir etiquetas con código de barras
+  const [visor, setVisor] = useState(null);            // 🔍 fotos a pantalla completa {fotos:[], i}
   const fileRef = useRef(null);
 
   // 📸 Sube fotos al COLOR elegido de una referencia (agrega, no reemplaza)
@@ -1538,7 +1571,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
+                      <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" onClick={e => { e.stopPropagation(); setVisor({ fotos: imgsDe(group.image), i:0 }); }} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"zoom-in" }} title="Ver foto completa" /> : group.emoji}</div>
                       <div>
                         <div style={{ fontWeight:900, fontSize:16, color:C.text }}>{group.name}</div>
                         <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{group.brand} · {group.variants.length} variantes</div>
@@ -1620,7 +1653,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
                                 {fotos.map((u, i) => (
                                   <div key={u + i} style={{ position:"relative", width:60, height:60 }}>
-                                    <img src={u} alt="" style={{ width:60, height:60, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                                    <img src={u} alt="" onClick={e => { e.stopPropagation(); setVisor({ fotos, i }); }} title="Ver foto completa" style={{ width:60, height:60, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
                                     <button
                                       onClick={e => { e.stopPropagation(); quitarFoto(vs, u); }}
                                       title="Quitar esta foto"
@@ -1663,7 +1696,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                   {p.image
-                    ? <img src={primeraImg(p.image)} alt="" style={{ width:54, height:54, borderRadius:13, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
+                    ? <img src={primeraImg(p.image)} alt="" onClick={() => setVisor({ fotos: imgsDe(p.image), i:0 })} title="Ver foto completa" style={{ width:54, height:54, borderRadius:13, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
                     : <div className="color-dot" style={{ width:34,height:34, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
@@ -1711,7 +1744,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   const td = { padding:"9px 10px", borderBottom:"1px solid "+C.border+"60", whiteSpace:"nowrap" };
                   return (
                     <tr key={p.id}>
-                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" style={{ width:46, height:46, borderRadius:11, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:24 }}>{p.emoji}</span>}</td>
+                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" onClick={() => setVisor({ fotos: imgsDe(p.image), i:0 })} title="Ver foto completa" style={{ width:46, height:46, borderRadius:11, objectFit:"cover", display:"block", cursor:"zoom-in" }} /> : <span style={{ fontSize:24 }}>{p.emoji}</span>}</td>
                       <td style={{ ...td, fontWeight:800 }}>{p.name}</td>
                       <td style={{ ...td, color:C.muted, fontWeight:600 }}>{p.sku}</td>
                       <td style={td}>{p.brand||"—"}</td>
@@ -1748,6 +1781,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       {shareOpen && <ShareModal workspaceId={workspaceId} sizes={sizes} onClose={() => setShareOpen(false)} showToast={showToast} />}
       {/* 🏷️ Etiquetas imprimibles con código de barras */}
       {labelsOpen && <LabelsModal products={products} onClose={() => setLabelsOpen(false)} showToast={showToast} />}
+      {/* 🔍 Visor de fotos a pantalla completa */}
+      {visor && <VisorFotos fotos={visor.fotos} inicio={visor.i} onClose={() => setVisor(null)} />}
     </div>
   );
 }
@@ -2233,6 +2268,7 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
   const [err, setErr] = useState("");
   const [uploading, setUploading] = useState(false);
   const [fotoColor, setFotoColor] = useState(null); // color al que se le agregan fotos
+  const [visor, setVisor] = useState(null);         // 🔍 fotos a pantalla completa {fotos:[], i}
   const photoRef = useRef(null);
 
   // 📸 Agrega varias fotos al color elegido (en todas sus variantes)
@@ -2357,9 +2393,9 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
                 <span style={{ fontSize:12.5, fontWeight:800 }}>{color}</span>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
-                {fotos.map(u => (
+                {fotos.map((u, ix) => (
                   <div key={u} style={{ position:"relative", width:58, height:58 }}>
-                    <img src={u} alt="" style={{ width:58, height:58, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                    <img src={u} alt="" onClick={() => setVisor({ fotos, i: ix })} title="Ver foto completa" style={{ width:58, height:58, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
                     <button
                       onClick={() => setVars(vs => vs.map(v => ((v.color || "—") === color ? { ...v, image: juntarImgs(imgsDe(v.image).filter(x => x !== u)) } : v)))}
                       title="Quitar foto"
@@ -2380,6 +2416,8 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
         })}
 
         {err && <div style={{ marginBottom:12, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
+        {/* 🔍 Visor de fotos a pantalla completa */}
+        {visor && <VisorFotos fotos={visor.fotos} inicio={visor.i} onClose={() => setVisor(null)} />}
         <div style={{ display:"flex", gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
           <button className="btn-main" onClick={save} style={{ flex:2 }}>Guardar cambios</button>
@@ -2391,6 +2429,7 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
 
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",barcode:"",category:"Ropa" });
+  const [visor, setVisor] = useState(null); // 🔍 foto a pantalla completa
   const [image, setImage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
@@ -2443,7 +2482,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
           <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
             {image ? (
               <>
-                <img src={image} alt="Vista previa" style={{ width:76, height:76, borderRadius:16, objectFit:"cover", border:"2px solid #EAECF5" }} />
+                <img src={image} alt="Vista previa" onClick={() => setVisor({ fotos:[image], i:0 })} title="Ver foto completa" style={{ width:76, height:76, borderRadius:16, objectFit:"cover", border:"2px solid #EAECF5", cursor:"zoom-in" }} />
                 <button className="filter-btn" onClick={()=>photoRef.current&&photoRef.current.click()} disabled={uploading}>{uploading ? "⏳ Subiendo…" : "🔄 Cambiar"}</button>
                 <button className="filter-btn" onClick={()=>setImage("")}>✕ Quitar</button>
               </>
@@ -2453,6 +2492,8 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
           </div>
         </div>
         {err && <div style={{ marginBottom:12, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
+        {/* 🔍 Visor de foto a pantalla completa */}
+        {visor && <VisorFotos fotos={visor.fotos} inicio={visor.i} onClose={() => setVisor(null)} />}
         <div style={{ display:"flex",gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
           <button className="btn-main" onClick={save} disabled={uploading} style={{ flex:2, opacity:uploading?0.6:1 }}>Guardar producto</button>
