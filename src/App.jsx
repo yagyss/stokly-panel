@@ -638,9 +638,12 @@ function PublicCatalog() {
   }, [ssKey, pedido, tallasSel]);
 
   useEffect(() => {
-    if (!ws) { setItems([]); return; }
+    // El catálogo público se pide por panel (ws). La función expone SOLO ese
+    // panel y solo columnas seguras: nunca costo, vendidos ni datos internos.
+    const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ws);
+    if (!esUuid) { setItems([]); return; }
     let vivo = true;
-    supabase.from("catalogo").select("*").eq("workspace_id", ws)
+    supabase.rpc("catalogo_publico", { ws })
       .then(({ data, error }) => {
         if (!vivo) return;
         if (error) { console.error("[stokly] catálogo:", error.message); setItems([]); }
