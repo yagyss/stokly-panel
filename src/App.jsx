@@ -451,8 +451,8 @@ function ShareModal({ workspaceId, sizes, onClose, showToast }) {
           <input className="stk-input" inputMode="tel" placeholder="Ej: 573001234567 (con código de país)" value={wa} onChange={e => cambiarWa(e.target.value)} />
           <div style={{ fontSize:11, color:C.muted, fontWeight:700, marginTop:5, lineHeight:1.5 }}>
             {tieneWa
-              ? <>✅ Tus clientas podrán tocar «＋ Añadir al pedido» en cada prenda y el pedido te llega <b style={{ color:C.green }}>a ti</b> por WhatsApp.</>
-              : "Déjalo vacío y el pedido se manda como mensaje normal (eligen tu contacto). Pon tu número para que los pedidos te lleguen solos."}
+              ? <>✅ Tus clientas podrán tocar «＋ Añadir al pedido» en cada prenda y <b style={{ color:C.green }}>al enviar se abre su WhatsApp directo en tu chat</b> con el pedido escrito.</>
+              : <>⚠️ <b style={{ color:C.yellow }}>Sin tu número</b>, al enviar se abre la lista de chats y la clienta debe buscar tu contacto. Pon tu WhatsApp para que el pedido te llegue <b>directo al mismo chat</b>.</>}
           </div>
         </div>
         <div style={{ background:C.blueLight, borderRadius:14, padding:"12px 14px", marginBottom:14, wordBreak:"break-all" }}>
@@ -626,8 +626,15 @@ function PublicCatalog() {
   const [talla, setTalla] = useState(qs.get("talla") || "");
   const [q, setQ] = useState("");
   const [foto, setFoto] = useState(null);        // { imgs:[], i }
-  const [pedido, setPedido] = useState([]);      // 🛍️ pedido armado [{ key, name, brand, color, price, size, emoji }]
-  const [tallasSel, setTallasSel] = useState({}); // talla elegida en cada tarjeta { [key]: size }
+  // 🛍️ El pedido se guarda en la sesión: si la clienta sale al WhatsApp y vuelve
+  // al catálogo, lo que armó sigue ahí.
+  const ssKey = `stokly-pedido:${ws}`;
+  const leerSS = () => { try { return JSON.parse(sessionStorage.getItem(ssKey) || "null"); } catch (e) { return null; } };
+  const [pedido, setPedido] = useState(() => (leerSS() || {}).pedido || []);            // [{ key, name, brand, color, price, emoji }]
+  const [tallasSel, setTallasSel] = useState(() => (leerSS() || {}).tallasSel || {});   // talla elegida en cada tarjeta { [key]: size }
+  useEffect(() => {
+    try { sessionStorage.setItem(ssKey, JSON.stringify({ pedido, tallasSel })); } catch (e) { /* sin almacenamiento */ }
+  }, [ssKey, pedido, tallasSel]);
 
   useEffect(() => {
     if (!ws) { setItems([]); return; }
@@ -686,11 +693,15 @@ function PublicCatalog() {
     const lineas = pedido.map((x, i) => `${i + 1}) ${x.name}${x.color ? " · " + x.color : ""}${tallaDe(x) ? " · Talla " + tallaDe(x) : ""}${x.price ? " — " + fmt(x.price) : ""}`);
     const txt =
       `🛍️ *¡Hola! Quiero pedir del catálogo:*\n\n${lineas.join("\n")}\n\n` +
-      `*Total aprox: ${fmt(totalPedido)} · ${pedido.length} prenda${pedido.length === 1 ? "" : "s"}*\n` +
+      `*Total: ${fmt(totalPedido)} · ${pedido.length} prenda${pedido.length === 1 ? "" : "s"}*\n` +
       `_(Te confirmo cantidades y cualquier detalle por aquí.)_\n\n` +
       `Ver catálogo: ${window.location.href}`;
+    // wa.me/<número> abre WhatsApp con el chat de la TIENDA (el mismo del que
+    // llegó el link). Usamos location.href en vez de window.open porque el
+    // navegador dentro de WhatsApp/Instagram bloquea las ventanas nuevas y no
+    // salta a la app: al navegar en la misma pestaña el celular abre WhatsApp.
     const destino = waTienda ? `https://wa.me/${waTienda}?text=` : `https://wa.me/?text=`;
-    window.open(destino + encodeURIComponent(txt), "_blank");
+    window.location.href = destino + encodeURIComponent(txt);
   };
 
   return (
@@ -788,32 +799,49 @@ function PublicCatalog() {
         <div style={{ textAlign:"center", padding:"40px 20px", color:C.muted, fontWeight:800 }}>😕 Nada coincide con ese filtro</div>
       )}
 
-      {/* 🛍️ Barra del pedido — aparece cuando juntaron prendas */}
+      {/* 🛍️ Barra del pedido — cada referencia discriminada + total */}
       {pedido.length > 0 && (
-        <>
-          <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#0E1116", color:"white", padding:"11px 12px", paddingBottom:"calc(11px + env(safe-area-inset-bottom))", zIndex:120, boxShadow:"0 -8px 26px rgba(0,0,0,.32)" }}>
-            <div style={{ maxWidth:980, margin:"0 auto", display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#0E1116", color:"white", zIndex:120, boxShadow:"0 -8px 26px rgba(0,0,0,.32)" }}>
+          <div style={{ maxWidth:980, margin:"0 auto", padding:"10px 12px", paddingBottom:"calc(10px + env(safe-area-inset-bottom))" }}>
+            {/* Prendas elegidas, una por una */}
+            <div style={{ maxHeight:Math.min(pedido.length, 3) * 36 + 8, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+              {pedido.map((x, i) => (
+                <div key={x.key} style={{ display:"flex", alignItems:"center", gap:8, height:36, borderBottom:"1px solid rgba(255,255,255,.09)" }}>
+                  <span style={{ width:20, flexShrink:0, color:"rgba(255,255,255,.45)", fontWeight:900, fontSize:12, textAlign:"center" }}>{i + 1}</span>
+                  <span style={{ flex:1, minWidth:0, fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    {x.name}{x.color ? ` · ${x.color}` : ""}{tallaDe(x) ? ` · T${tallaDe(x)}` : ""}
+                  </span>
+                  <span style={{ flexShrink:0, fontWeight:900, fontSize:13, color:"#9BE7CD" }}>{fmt(x.price)}</span>
+                  <button
+                    onClick={() => setPedido(prev => prev.filter(p => p.key !== x.key))}
+                    title="Quitar esta prenda del pedido"
+                    style={{ width:26, height:26, flexShrink:0, borderRadius:8, background:"rgba(255,255,255,.12)", border:"none", color:"rgba(255,255,255,.85)", fontSize:13, cursor:"pointer", fontFamily:"inherit" }}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Sumatoria */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6, padding:"9px 0", borderTop:"1.5px solid rgba(255,255,255,.22)", fontWeight:900, fontSize:14.5 }}>
+              <span>TOTAL · {pedido.length} prenda{pedido.length === 1 ? "" : "s"}</span>
+              <span style={{ color:"#00E0A8" }}>{fmt(totalPedido)}</span>
+            </div>
+
+            {/* Acciones */}
+            <div style={{ display:"flex", gap:9 }}>
               <button
                 onClick={() => setPedido([])}
                 title="Vaciar el pedido"
-                style={{ width:42, height:42, flexShrink:0, borderRadius:13, background:"rgba(255,255,255,.12)", border:"none", color:"white", fontSize:17, cursor:"pointer", fontFamily:"inherit" }}
+                style={{ width:50, flexShrink:0, background:"rgba(255,255,255,.12)", border:"none", borderRadius:13, color:"white", fontSize:17, cursor:"pointer", fontFamily:"inherit" }}
               >🗑️</button>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:900, fontSize:13.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                  🛍️ {pedido.length} prenda{pedido.length === 1 ? "" : "s"} · {fmt(totalPedido)}
-                </div>
-                <div style={{ fontSize:11, color:"rgba(255,255,255,.6)", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                  {pedido.map(x => x.name).join(" · ")}
-                </div>
-              </div>
               <button
                 onClick={enviarPedido}
-                title="Enviar este pedido por WhatsApp"
-                style={{ flexShrink:0, background:"#25D366", color:"white", border:"none", borderRadius:13, padding:"13px 14px", fontWeight:900, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}
+                title="Abrir WhatsApp con este pedido"
+                style={{ flex:1, background:"#25D366", color:"white", border:"none", borderRadius:13, padding:"14px 12px", fontWeight:900, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}
               >📤 Enviar pedido</button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* Pie */}
@@ -826,7 +854,7 @@ function PublicCatalog() {
       </div>
 
       {/* Hueco para que la barra del pedido no tape el pie */}
-      {pedido.length > 0 && <div style={{ height:86 }} />}
+      {pedido.length > 0 && <div style={{ height:122 + Math.min(pedido.length, 3) * 36 }} />}
 
       {/* Visor de fotos */}
       {foto && (
