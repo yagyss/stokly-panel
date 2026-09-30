@@ -1538,7 +1538,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <div style={{ width:42,height:42, background:hasAlert?C.redLight:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center", fontSize:22, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
+                      <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : group.emoji}</div>
                       <div>
                         <div style={{ fontWeight:900, fontSize:16, color:C.text }}>{group.name}</div>
                         <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{group.brand} · {group.variants.length} variantes</div>
@@ -1619,8 +1619,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                               </div>
                               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
                                 {fotos.map((u, i) => (
-                                  <div key={u + i} style={{ position:"relative", width:42, height:42 }}>
-                                    <img src={u} alt="" style={{ width:42, height:42, borderRadius:10, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                                  <div key={u + i} style={{ position:"relative", width:60, height:60 }}>
+                                    <img src={u} alt="" style={{ width:60, height:60, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
                                     <button
                                       onClick={e => { e.stopPropagation(); quitarFoto(vs, u); }}
                                       title="Quitar esta foto"
@@ -1632,7 +1632,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                                   onClick={e => { e.stopPropagation(); setPhotoTarget({ ids: vs.map(v => v.id) }); if (fileRef.current) fileRef.current.click(); }}
                                   title={`Agregar fotos al color ${color} (puedes elegir varias)`}
                                   disabled={uploading}
-                                  style={{ width:42, height:42, borderRadius:10, border:"1.5px dashed "+C.border, background:C.bg, cursor:"pointer", fontSize:16, color:C.muted, fontFamily:"inherit", fontWeight:900, lineHeight:1 }}
+                                  style={{ width:60, height:60, borderRadius:13, border:"1.5px dashed "+C.border, background:C.bg, cursor:"pointer", fontSize:22, color:C.muted, fontFamily:"inherit", fontWeight:900, lineHeight:1 }}
                                 >{uploading ? "⏳" : "＋"}</button>
                               </div>
                               <span style={{ fontSize:10, color:C.muted, fontWeight:700 }}>{fotos.length} foto{fotos.length === 1 ? "" : "s"}</span>
@@ -1663,8 +1663,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                   {p.image
-                    ? <img src={primeraImg(p.image)} alt="" style={{ width:34, height:34, borderRadius:10, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
-                    : <div className="color-dot" style={{ width:22,height:22, background:getColorCSS(p.color), flexShrink:0 }} />}
+                    ? <img src={primeraImg(p.image)} alt="" style={{ width:54, height:54, borderRadius:13, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5" }} />
+                    : <div className="color-dot" style={{ width:34,height:34, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
                     <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.brand} · {p.color} · T{p.size} · {p.sku}</div>
@@ -1711,7 +1711,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   const td = { padding:"9px 10px", borderBottom:"1px solid "+C.border+"60", whiteSpace:"nowrap" };
                   return (
                     <tr key={p.id}>
-                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" style={{ width:30, height:30, borderRadius:8, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:17 }}>{p.emoji}</span>}</td>
+                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" style={{ width:46, height:46, borderRadius:11, objectFit:"cover", display:"block" }} /> : <span style={{ fontSize:24 }}>{p.emoji}</span>}</td>
                       <td style={{ ...td, fontWeight:800 }}>{p.name}</td>
                       <td style={{ ...td, color:C.muted, fontWeight:600 }}>{p.sku}</td>
                       <td style={td}>{p.brand||"—"}</td>
@@ -2358,8 +2358,8 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
                 {fotos.map(u => (
-                  <div key={u} style={{ position:"relative", width:40, height:40 }}>
-                    <img src={u} alt="" style={{ width:40, height:40, borderRadius:9, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
+                  <div key={u} style={{ position:"relative", width:58, height:58 }}>
+                    <img src={u} alt="" style={{ width:58, height:58, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5" }} />
                     <button
                       onClick={() => setVars(vs => vs.map(v => ((v.color || "—") === color ? { ...v, image: juntarImgs(imgsDe(v.image).filter(x => x !== u)) } : v)))}
                       title="Quitar foto"
@@ -2443,7 +2443,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
           <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
             {image ? (
               <>
-                <img src={image} alt="Vista previa" style={{ width:56, height:56, borderRadius:14, objectFit:"cover", border:"2px solid #EAECF5" }} />
+                <img src={image} alt="Vista previa" style={{ width:76, height:76, borderRadius:16, objectFit:"cover", border:"2px solid #EAECF5" }} />
                 <button className="filter-btn" onClick={()=>photoRef.current&&photoRef.current.click()} disabled={uploading}>{uploading ? "⏳ Subiendo…" : "🔄 Cambiar"}</button>
                 <button className="filter-btn" onClick={()=>setImage("")}>✕ Quitar</button>
               </>
@@ -2808,10 +2808,10 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               return (
               <div key={i} style={{ display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border }}>
                 {url ? (rotas[i]
-                  ? <div style={{ width:26,height:26,borderRadius:7,background:C.redLight,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13 }} title="El enlace no carga">⚠️</div>
-                  : <img src={url} alt="" onError={()=>setRotas(prev=>({...prev,[i]:true}))} style={{ width:26, height:26, borderRadius:7, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />)
+                  ? <div style={{ width:38,height:38,borderRadius:9,background:C.redLight,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17 }} title="El enlace no carga">⚠️</div>
+                  : <img src={url} alt="" onError={()=>setRotas(prev=>({...prev,[i]:true}))} style={{ width:38, height:38, borderRadius:9, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />)
                 : nombreFoto
-                  ? <div style={{ width:26,height:26,borderRadius:7,background:adjunta?C.greenLight:C.bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,border:adjunta?"1.5px solid "+C.green:"1.5px dashed "+C.border }} title={nombreFoto}>📷</div>
+                  ? <div style={{ width:38,height:38,borderRadius:9,background:adjunta?C.greenLight:C.bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:adjunta?"1.5px solid "+C.green:"1.5px dashed "+C.border }} title={nombreFoto}>📷</div>
                   : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div>
