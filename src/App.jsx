@@ -392,9 +392,18 @@ function ScanModal({ onClose, onScan }) {
 function ShareModal({ workspaceId, sizes, onClose, showToast }) {
   const [modo, setModo] = useState("todo"); // todo | talla
   const [talla, setTalla] = useState(sizes[0] || "");
+  // Tu WhatsApp: para que los PEDIDOS que arma la clienta en el catálogo te lleguen directo a ti
+  const [wa, setWa] = useState(() => { try { return localStorage.getItem("stokly-wa") || ""; } catch (e) { return ""; } });
   useEffect(() => { if (modo === "talla" && !talla && sizes.length) setTalla(sizes[0]); }, [modo, sizes, talla]);
   const base = `${window.location.origin}${window.location.pathname}#/catalogo?ws=${encodeURIComponent(workspaceId || "")}`;
-  const link = base + (modo === "talla" && talla ? `&talla=${encodeURIComponent(talla)}` : "");
+  const waNum = wa.replace(/\D/g, "");
+  const tieneWa = waNum.length >= 10;
+  const link = base + (modo === "talla" && talla ? `&talla=${encodeURIComponent(talla)}` : "") + (tieneWa ? `&wa=${waNum}` : "");
+  const cambiarWa = (v) => {
+    const s = v.replace(/[^\d\s+()-]/g, "");
+    setWa(s);
+    try { localStorage.setItem("stokly-wa", s); } catch (e) { /* sin almacenamiento */ }
+  };
   const msg = modo === "talla" && talla
     ? `🛍️ Mira nuestro catálogo — prendas disponibles en talla ${talla}:\n${link}`
     : `🛍️ Mira nuestro catálogo completo:\n${link}`;
@@ -414,7 +423,8 @@ function ShareModal({ workspaceId, sizes, onClose, showToast }) {
         <div className="handle" />
         <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>📤 Compartir catálogo</div>
         <div style={{ fontSize:13, color:C.muted, fontWeight:600, marginBottom:16, lineHeight:1.5 }}>
-          Cualquiera con el link ve tu catálogo <b>sin iniciar sesión</b>. Nunca se muestran costos ni datos internos.
+          Cualquiera con el link ve tu catálogo <b>sin iniciar sesión</b>. Nunca se muestran costos ni datos internos.<br />
+          🛍️ Cada prenda tiene un botón <b>«＋ Añadir al pedido»</b>: la clienta junta lo que quiere y te lo manda por WhatsApp.
         </div>
         <div style={{ display:"flex", gap:10, marginBottom:14 }}>
           {[
@@ -436,6 +446,15 @@ function ShareModal({ workspaceId, sizes, onClose, showToast }) {
             </select>
           </div>
         )}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>Tu WhatsApp para pedidos (opcional)</div>
+          <input className="stk-input" inputMode="tel" placeholder="Ej: 573001234567 (con código de país)" value={wa} onChange={e => cambiarWa(e.target.value)} />
+          <div style={{ fontSize:11, color:C.muted, fontWeight:700, marginTop:5, lineHeight:1.5 }}>
+            {tieneWa
+              ? <>✅ Tus clientas podrán tocar «＋ Añadir al pedido» en cada prenda y el pedido te llega <b style={{ color:C.green }}>a ti</b> por WhatsApp.</>
+              : "Déjalo vacío y el pedido se manda como mensaje normal (eligen tu contacto). Pon tu número para que los pedidos te lleguen solos."}
+          </div>
+        </div>
         <div style={{ background:C.blueLight, borderRadius:14, padding:"12px 14px", marginBottom:14, wordBreak:"break-all" }}>
           <div style={{ fontSize:10.5, fontWeight:900, color:C.blue, textTransform:"uppercase", marginBottom:4 }}>Tu link</div>
           <div style={{ fontSize:12.5, fontWeight:700, color:C.text, lineHeight:1.55 }}>{link}</div>
@@ -602,10 +621,13 @@ function PublicCatalog() {
     return new URLSearchParams(h.startsWith("?") ? h.slice(1) : h);
   })();
   const ws = qs.get("ws") || "";
+  const waTienda = (qs.get("wa") || "").replace(/\D/g, ""); // WhatsApp de la tienda (a quién llega el pedido)
   const [items, setItems] = useState(undefined); // undefined = cargando
   const [talla, setTalla] = useState(qs.get("talla") || "");
   const [q, setQ] = useState("");
   const [foto, setFoto] = useState(null);        // { imgs:[], i }
+  const [pedido, setPedido] = useState([]);      // 🛍️ pedido armado [{ key, name, brand, color, price, size, emoji }]
+  const [tallasSel, setTallasSel] = useState({}); // talla elegida en cada tarjeta { [key]: size }
 
   useEffect(() => {
     if (!ws) { setItems([]); return; }
@@ -641,6 +663,35 @@ function PublicCatalog() {
     (!talla || g.tallas.some(t => String(t.size) === talla)) &&
     (!q || [g.name, g.brand, g.color].some(x => String(x || "").toLowerCase().includes(q.toLowerCase())))
   ).sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  // ── 🛍️ PEDIDO: la clienta junta prendas y las manda de una sola vez ────────
+  // Talla elegida en la tarjeta (si solo hay una con stock, se elige sola)
+  const tallaElegida = (g) => {
+    if (tallasSel[g.key]) return tallasSel[g.key];
+    const conStock = ordenarTallas(g.tallas).filter(t => t.stock > 0);
+    return conStock.length === 1 ? conStock[0].size : "";
+  };
+  const enPedido = (k) => pedido.some(x => x.key === k);
+  const alternarPedido = (g) => setPedido(prev => prev.some(x => x.key === g.key)
+    ? prev.filter(x => x.key !== g.key)
+    : [...prev, { key:g.key, name:g.name, brand:g.brand, color:g.color, price:g.price, emoji:g.emoji }]);
+  const totalPedido = pedido.reduce((a, x) => a + (+x.price || 0), 0);
+  const tallaDe = (x) => {
+    if (tallasSel[x.key]) return tallasSel[x.key];
+    const g = grupos.find(z => z.key === x.key);
+    return g ? tallaElegida(g) : "";
+  };
+  const enviarPedido = () => {
+    if (!pedido.length) return;
+    const lineas = pedido.map((x, i) => `${i + 1}) ${x.name}${x.color ? " · " + x.color : ""}${tallaDe(x) ? " · Talla " + tallaDe(x) : ""}${x.price ? " — " + fmt(x.price) : ""}`);
+    const txt =
+      `🛍️ *¡Hola! Quiero pedir del catálogo:*\n\n${lineas.join("\n")}\n\n` +
+      `*Total aprox: ${fmt(totalPedido)} · ${pedido.length} prenda${pedido.length === 1 ? "" : "s"}*\n` +
+      `_(Te confirmo cantidades y cualquier detalle por aquí.)_\n\n` +
+      `Ver catálogo: ${window.location.href}`;
+    const destino = waTienda ? `https://wa.me/${waTienda}?text=` : `https://wa.me/?text=`;
+    window.open(destino + encodeURIComponent(txt), "_blank");
+  };
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito','Segoe UI',sans-serif" }}>
@@ -705,12 +756,29 @@ function PublicCatalog() {
                   <div style={{ fontWeight:900, fontSize:15, color:C.green, whiteSpace:"nowrap" }}>{fmt(g.price)}</div>
                 </div>
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:10 }}>
-                  {ordenarTallas(g.tallas).map(t => (
-                    <span key={t.size} style={{ fontSize:11.5, fontWeight:800, borderRadius:9, padding:"4px 9px", background:t.stock > 0 ? C.greenLight : C.bg, color:t.stock > 0 ? C.green : C.muted, border:`1.5px solid ${t.stock > 0 ? C.green + "80" : C.border}` }}>
-                      T{t.size}{t.stock <= 0 ? " · Agotado" : ""}
-                    </span>
-                  ))}
+                  {ordenarTallas(g.tallas).map(t => {
+                    const elegida = tallaElegida(g) === t.size;
+                    const agotada = t.stock <= 0;
+                    return (
+                      <button
+                        key={t.size}
+                        onClick={() => { if (!agotada) setTallasSel(s => ({ ...s, [g.key]: s[g.key] === t.size ? undefined : t.size })); }}
+                        disabled={agotada}
+                        title={agotada ? "Talla agotada" : `Elegir la talla ${t.size} para pedir`}
+                        style={{ fontSize:11.5, fontWeight:800, borderRadius:9, padding:"4px 9px", cursor:agotada ? "default" : "pointer", fontFamily:"inherit", background:agotada ? C.bg : (elegida ? C.green : C.greenLight), color:agotada ? C.muted : (elegida ? "white" : C.green), border:`1.5px solid ${agotada ? C.border : (elegida ? C.green : C.green + "90")}` }}
+                      >
+                        T{t.size}{agotada ? " · Agotado" : ""}
+                      </button>
+                    );
+                  })}
                 </div>
+                <button
+                  onClick={() => alternarPedido(g)}
+                  title="Juntar esta prenda para pedirla por WhatsApp"
+                  style={{ width:"100%", marginTop:12, padding:"11px 12px", borderRadius:13, cursor:"pointer", fontFamily:"inherit", fontWeight:900, fontSize:13.5, border:`2px solid ${enPedido(g.key) ? C.green : C.green + "90"}`, background:enPedido(g.key) ? C.green : "transparent", color:enPedido(g.key) ? "white" : C.green }}
+                >
+                  {enPedido(g.key) ? "✓ En el pedido · toca para quitar" : "＋ Añadir al pedido"}
+                </button>
               </div>
             </div>
           ))}
@@ -718,6 +786,34 @@ function PublicCatalog() {
       )}
       {items !== undefined && items.length > 0 && visibles.length === 0 && (
         <div style={{ textAlign:"center", padding:"40px 20px", color:C.muted, fontWeight:800 }}>😕 Nada coincide con ese filtro</div>
+      )}
+
+      {/* 🛍️ Barra del pedido — aparece cuando juntaron prendas */}
+      {pedido.length > 0 && (
+        <>
+          <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#0E1116", color:"white", padding:"11px 12px", paddingBottom:"calc(11px + env(safe-area-inset-bottom))", zIndex:120, boxShadow:"0 -8px 26px rgba(0,0,0,.32)" }}>
+            <div style={{ maxWidth:980, margin:"0 auto", display:"flex", alignItems:"center", gap:10 }}>
+              <button
+                onClick={() => setPedido([])}
+                title="Vaciar el pedido"
+                style={{ width:42, height:42, flexShrink:0, borderRadius:13, background:"rgba(255,255,255,.12)", border:"none", color:"white", fontSize:17, cursor:"pointer", fontFamily:"inherit" }}
+              >🗑️</button>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:900, fontSize:13.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  🛍️ {pedido.length} prenda{pedido.length === 1 ? "" : "s"} · {fmt(totalPedido)}
+                </div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,.6)", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  {pedido.map(x => x.name).join(" · ")}
+                </div>
+              </div>
+              <button
+                onClick={enviarPedido}
+                title="Enviar este pedido por WhatsApp"
+                style={{ flexShrink:0, background:"#25D366", color:"white", border:"none", borderRadius:13, padding:"13px 14px", fontWeight:900, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}
+              >📤 Enviar pedido</button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Pie */}
@@ -728,6 +824,9 @@ function PublicCatalog() {
           style={{ marginTop:8, background:"white", border:"1.5px solid "+C.border, borderRadius:12, padding:"9px 16px", fontWeight:800, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}
         >¿Eres la tienda? Inicia sesión</button>
       </div>
+
+      {/* Hueco para que la barra del pedido no tape el pie */}
+      {pedido.length > 0 && <div style={{ height:86 }} />}
 
       {/* Visor de fotos */}
       {foto && (
