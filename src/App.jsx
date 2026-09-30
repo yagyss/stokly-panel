@@ -183,7 +183,7 @@ function cargarJsBarcode(ok, fail) {
   if (jsbCargas) { jsbCargas.push({ ok, fail }); return; }
   jsbCargas = [{ ok, fail }];
   const s = document.createElement("script");
-  s.src = "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js";
+  s.src = "./JsBarcode.all.min.js";
   s.onload = () => { const l = jsbCargas || []; jsbCargas = null; l.forEach(x => x.ok()); };
   s.onerror = () => { const l = jsbCargas || []; jsbCargas = null; l.forEach(x => x.fail()); };
   document.head.appendChild(s);
@@ -197,7 +197,7 @@ function cargarScriptXLSX(msgCarga, msgFallo, cb, setMsg) {
   xlsxCargas = [{ cb, setMsg, msgFallo }];
   setMsg(msgCarga);
   const s = document.createElement("script");
-  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.src = "./xlsx.full.min.js";
   s.onload = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => { try { x.setMsg(""); x.cb(); } catch (e) { console.error("[stokly] xlsx:", e); } }); };
   s.onerror = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => x.setMsg(x.msgFallo)); };
   document.head.appendChild(s);
@@ -350,7 +350,7 @@ function ScanModal({ onClose, onScan }) {
     if (window.Html5Qrcode) { arrancar(); }
     else {
       const s = document.createElement("script");
-      s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+      s.src = "./html5-qrcode.min.js";
       s.onload = () => { arrancar(); };
       s.onerror = () => { if (vivo) setMsg("❌ No se pudo cargar el escáner (revisa tu conexión). Escribe el código abajo ✍️"); };
       document.head.appendChild(s);

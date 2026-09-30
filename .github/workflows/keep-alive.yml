@@ -1,16 +1,19 @@
-# ══════════════════════════════════════════════════════════════
-#  MANTENER SUPABASE ACTIVO (evita la pausa por inactividad)
-#  El plan gratis pausa el proyecto si pasan 7 días sin actividad.
-#  Este trabajo consulta Supabase TODOS LOS DÍAS para que nunca
-#  llegue a esos 7 días. Si algún día falla, GitHub te avisa por
-#  correo (el trabajo queda en rojo).
-# ══════════════════════════════════════════════════════════════
+# MANTENER SUPABASE ACTIVO (evita la pausa por inactividad)
+# El plan gratis pausa el proyecto si pasan 7 dias sin actividad.
+# Este trabajo consulta Supabase TODOS LOS DIAS para que nunca
+# llegue a esos 7 dias. Si algun dia falla, GitHub te avisa por
+# correo (el trabajo queda en rojo).
+
 name: Mantener Supabase activo
 
 on:
   schedule:
-    - cron: "17 6 * * *"   # todos los días a las 6:17 UTC (1:17 a.m. en Colombia)
+    - cron: "17 6 * * *"   # todos los dias a las 6:17 UTC (1:17 a.m. en Colombia)
   workflow_dispatch: {}     # permite probarlo a mano
+
+# El trabajo solo necesita leer el repo: ni mas ni menos.
+permissions:
+  contents: read
 
 jobs:
   ping:
