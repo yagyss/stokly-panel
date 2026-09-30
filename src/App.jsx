@@ -694,8 +694,7 @@ function PublicCatalog() {
     const txt =
       `🛍️ *¡Hola! Quiero pedir del catálogo:*\n\n${lineas.join("\n")}\n\n` +
       `*Total: ${fmt(totalPedido)} · ${pedido.length} prenda${pedido.length === 1 ? "" : "s"}*\n` +
-      `_(Te confirmo cantidades y cualquier detalle por aquí.)_\n\n` +
-      `Ver catálogo: ${window.location.href}`;
+      `_(Te confirmo cantidades y cualquier detalle por aquí.)_`;
     // wa.me/<número> abre WhatsApp con el chat de la TIENDA (el mismo del que
     // llegó el link). Usamos location.href en vez de window.open porque el
     // navegador dentro de WhatsApp/Instagram bloquea las ventanas nuevas y no
