@@ -109,17 +109,24 @@ function useWindowWidth() {
 }
 
 const parseCSV = (text) => {
-  const lines = text.trim().split("\n").map(l=>l.replace(/\r/g,""));
+  const lines = text.trim().split("\n").map(l=>l.replace(/\r/g,"")).filter(l=>l.trim());
   if (lines.length < 2) return [];
+  // La plantilla que se descarga trae una leyenda arriba y una fila en blanco
+  // antes de los títulos: se salta hasta la fila que SÍ son los encabezados.
+  const esEncabezado = l => { const c = l.replace(/"/g,"").toLowerCase();
+    return /(nombre|\bname\b|producto)/.test(c) && /(stock|cantidad)/.test(c); };
+  let ini = 0;
+  for (let i = 0; i < Math.min(3, lines.length - 1); i++) { if (esEncabezado(lines[i])) { ini = i; break; } }
+  const lineaHdr = lines[ini];
   // Detecta el separador: tab, punto y coma (Excel español) o coma
-  const delim = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
+  const delim = lineaHdr.includes("\t") ? "\t" : lineaHdr.includes(";") ? ";" : ",";
   // Divide una línea respetando campos entre comillas (permite comas dentro de valores)
   const splitLine = (line) => { const out=[]; let cur=""; let q=false;
     for (let i=0;i<line.length;i++){ const ch=line[i];
       if (q){ if (ch==='"'){ if (line[i+1]==='"'){ cur+='"'; i++; } else { q=false; } } else { cur+=ch; } }
       else { if (ch==='"'){ q=true; } else if (ch===delim){ out.push(cur); cur=""; } else { cur+=ch; } }
     } out.push(cur); return out; };
-  const headers = splitLine(lines[0]).map(h=>h.replace(/"/g,"").trim().toLowerCase());
+  const headers = splitLine(lineaHdr).map(h=>h.replace(/"/g,"").trim().toLowerCase());
   const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], subcategory:["subcategoría","subcategoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
   // "categoría" no debe caer en la columna "subcategoría" (ni "stock" en
   // "stock mínimo", ni "sku" en "código de barras"): se ignoran esas columnas.
@@ -131,16 +138,28 @@ const parseCSV = (text) => {
     for (const v of (colMap[k]||[k])) { const i = headers.findIndex(h=>h.includes(v) && !mala(h)); if (i!==-1) return i; } return -1;
   };
   const cols = {}; for (const k of Object.keys(colMap)) cols[k] = findCol(k);
-  return lines.slice(1).filter(l=>l.trim()).map((line,i) => {
+  return lines.slice(ini+1).filter(l=>l.trim()).map((line,i) => {
     const vals = splitLine(line).map(v=>v.replace(/"/g,"").trim());
+    if (!vals.some(v=>v)) return null; // línea vacía
     const get = k => cols[k]!==-1 ? (vals[cols[k]]||"") : "";
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
-    // OBLIGATORIOS: nombre y stock (sin ellos la fila no es un producto).
-    // categoría y subcategoría se validan en la vista previa y, si faltan,
-    // el producto queda en "Otros" (no se bloquea la importación).
-    if (!name||!stockRaw) return null;
-    const category=get("category");
-    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,subcategory:get("subcategory")||"",stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"",barcode:get("barcode")||"" };
+    const category=get("category"),subcategory=get("subcategory");
+    const brand=get("brand"),color=get("color"),size=get("size");
+    const price=get("price"),cost=get("cost"),image=get("image");
+    // Campos con ASTERISCO ROJO en la plantilla = OBLIGATORIOS. Si falta alguno
+    // la vista previa lo avisa; sin nombre o sin stock la fila NO se importa.
+    const faltan = [];
+    if (!name)        faltan.push("nombre");
+    if (!category)    faltan.push("categoría");
+    if (!subcategory) faltan.push("subcategoría");
+    if (!stockRaw)    faltan.push("stock");
+    if (!brand)       faltan.push("marca");
+    if (!color)       faltan.push("color");
+    if (!size)        faltan.push("talla");
+    if (!price)       faltan.push("precio venta");
+    if (!cost)        faltan.push("costo");
+    if (!image)       faltan.push("imagen");
+    return { id:newId(),name,sku,brand,color,size,category,subcategory,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(price.replace(/[^0-9.]/g,""))||0,cost:parseFloat(cost.replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image,barcode:get("barcode")||"",faltan };
   }).filter(Boolean);
 };
 
@@ -212,6 +231,31 @@ function cargarScriptXLSX(msgCarga, msgFallo, cb, setMsg) {
   s.onload = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => { try { x.setMsg(""); x.cb(); } catch (e) { console.error("[stokly] xlsx:", e); } }); };
   s.onerror = () => { const l = xlsxCargas || []; xlsxCargas = null; l.forEach(x => x.setMsg(x.msgFallo)); };
   document.head.appendChild(s);
+}
+
+// Carga perezosa de ExcelJS — solo se usa para la plantilla con los
+// asteriscos de los campos obligatorios PINTADOS EN ROJO (SheetJS no pinta).
+let excelJSPromesa = null;
+function cargarScriptExcelJS() {
+  if (window.ExcelJS) return Promise.resolve(true);
+  if (excelJSPromesa) return excelJSPromesa;
+  excelJSPromesa = new Promise(resolve => {
+    const s = document.createElement("script");
+    s.src = "./exceljs.min.js";
+    s.onload = () => { excelJSPromesa = null; resolve(!!window.ExcelJS); };
+    s.onerror = () => { excelJSPromesa = null; resolve(false); };
+    document.head.appendChild(s);
+  });
+  return excelJSPromesa;
+}
+
+// Descarga un archivo con nombre (compartido por las plantillas)
+function descargarBlob(blob, nombre) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 // Busca un producto por el código escaneado de la etiqueta (SKU o código de barras)
@@ -3140,41 +3184,44 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const fileRef=useRef();
   const fotosRef=useRef();
   // 📄 Plantilla: mismo orden que el formulario de "Nuevo producto".
-  // OBLIGATORIOS = nombre, categoría, subcategoría y stock · el resto es opcional.
+  // OBLIGATORIOS = todo EXCEPTO sku, código de barras y stock mínimo.
+  // En el archivo se marcan con un ASTERISCO ROJO (los opcionales van sin *).
+  const ES_OBLIGATORIO = h => String(h).startsWith("*");
+  const PLANTILLA_LEYENDA = "🔴 * EN ROJO = OBLIGATORIO · SIN * = OPCIONAL (sku, código de barras y stock mínimo)";
   const PLANTILLA_HEADERS = [
-    "nombre (obligatorio)",
-    "categoría (obligatorio)",
-    "subcategoría (obligatorio)",
-    "stock (obligatorio)",
+    "* nombre",
+    "* categoría",
+    "* subcategoría",
+    "* stock",
+    "* marca",
+    "* color",
+    "* talla",
+    "* precio venta",
+    "* costo",
+    "* imagen (foto o enlace)",
     "sku (opcional)",
     "código de barras (opcional)",
-    "marca (opcional)",
-    "color (opcional)",
-    "talla (opcional)",
     "stock mínimo (opcional)",
-    "precio venta (opcional)",
-    "costo (opcional)",
-    "imagen (foto o enlace) (opcional)",
   ];
-  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","Camisetas","10","CAM-001","7501234567890","Nike","Blanco","M","5","199.99","80.50","camiseta.jpg"];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","Camisetas","10","Nike","Blanco","M","199.99","80.50","camiseta.jpg","CAM-001","7501234567890","5"];
   // Hoja "Instrucciones" del Excel: qué es obligatorio y qué va en cada columna
   const PLANTILLA_INFO = [
-    ["COLUMNA","OBLIGATORIA","QUÉ PONER AHÍ"],
-    ["nombre","✅ SÍ","Como se ve en la tienda: Camiseta Básica"],
-    ["categoría","✅ SÍ","Ropa, Calzado, Bolsos y Carteras, Accesorios, Joyería y Bisutería, Belleza y Cuidado Personal u Otros. Si no existe en tu panel, Stokly la crea al importar."],
-    ["subcategoría","✅ SÍ","Depende de la categoría (Camisetas, Tenis, Carteras…). Stokly la crea si todavía no existe."],
-    ["stock","✅ SÍ","Unidades disponibles, número entero (ej: 10)."],
-    ["sku","No (opcional)","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
-    ["código de barras","No (opcional)","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
-    ["marca","No (opcional)","Ej: Nike"],
-    ["color","No (opcional)","Ej: Blanco"],
-    ["talla","No (opcional)","Ej: M o 42"],
-    ["stock mínimo","No (opcional)","Avisa con 🟠/🟡 cuando el stock baje de este número. Si lo dejas vacío vale 5."],
-    ["precio venta","No (opcional)","Usa punto para decimales: 199.99"],
-    ["costo","No (opcional)","Lo que te costó: 80.50 (si falta se toma 0)."],
-    ["imagen (foto o enlace)","No (opcional)","Escribe el nombre de la foto (camiseta.jpg) y adjúntala al importar, o pega un enlace https://… Varias fotos: sepáralas con ||"],
+    ["COLUMNA","* OBLIGATORIA","QUÉ PONER AHÍ"],
+    ["* nombre","✅ SÍ","Como se ve en la tienda: Camiseta Básica"],
+    ["* categoría","✅ SÍ","Ropa, Calzado, Bolsos y Carteras, Accesorios, Joyería y Bisutería, Belleza y Cuidado Personal u Otros. Si no existe en tu panel, Stokly la crea al importar."],
+    ["* subcategoría","✅ SÍ","Depende de la categoría (Camisetas, Tenis, Carteras…). Stokly la crea si todavía no existe."],
+    ["* stock","✅ SÍ","Unidades disponibles, número entero (ej: 10)."],
+    ["* marca","✅ SÍ","Ej: Nike"],
+    ["* color","✅ SÍ","Ej: Blanco"],
+    ["* talla","✅ SÍ","Ej: M o 42"],
+    ["* precio venta","✅ SÍ","Usa punto para decimales: 199.99"],
+    ["* costo","✅ SÍ","Lo que te costó: 80.50 (si falta se toma 0)."],
+    ["* imagen (foto o enlace)","✅ SÍ","Escribe el nombre de la foto (camiseta.jpg) y adjúntala al importar, o pega un enlace https://… Varias fotos: sepáralas con ||"],
+    ["sku (opcional)","No","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
+    ["código de barras (opcional)","No","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
+    ["stock mínimo (opcional)","No","Avisa con 🟠/🟡 cuando el stock baje de este número. Si lo dejas vacío vale 5."],
     ["","",""],
-    ["RECUERDA","",'Borra la fila de ejemplo antes de importar. Archivo .xlsx o CSV; en Google Sheets sube el CSV y compártelo como "Cualquier persona con el enlace" (Lector).'],
+    ["RECUERDA","",'Los que van con * en ROJO son obligatorios: si falta alguno, la vista previa te lo avisa. Borra la leyenda y la fila de ejemplo antes de importar. Archivo .xlsx o CSV; en Google Sheets sube el CSV y compártelo como "Cualquier persona con el enlace" (Lector).'],
   ];
   // 📂 Categorías y subcategorías del panel (para asignarlas a lo importado)
   const cats = useCategorias(workspaceId);
@@ -3184,36 +3231,97 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     cargarScriptXLSX(msgCarga, msgFallo, cb, setError);
   }
 
-  //1) Plantilla REAL de Excel (.xlsx) — columnas garantizadas en cualquier idioma de Excel
-  function descargarExcel() {
+  //1) Plantilla REAL de Excel (.xlsx) con los obligatorios en ASTERISCO ROJO
+  async function descargarExcel() {
+    setError("⏳ Preparando plantilla de Excel…");
+    // 1ª opción: ExcelJS → el asterisco de cada obligatorio sale pintado en ROJO
+    try {
+      if (await cargarScriptExcelJS()) { await plantillaExcelEstilo(); setError(""); return; }
+    } catch (e) { console.error("[stokly] plantilla (exceljs):", e); }
+    // Respaldo: SheetJS (mismo archivo, sin color) — nunca te quedas sin plantilla
     cargarXLSX(
       "⏳ Preparando plantilla de Excel…",
       "No se pudo cargar el generador de Excel. Revisa tu conexión o usa la plantilla CSV de abajo.",
-      () => {
-        try {
-          const ws = XLSX.utils.aoa_to_sheet([PLANTILLA_HEADERS, PLANTILLA_EJEMPLO]);
-          ws["!cols"] = PLANTILLA_HEADERS.map((h, i) => ({ wch: Math.min(46, Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 2) }));
-          const info = XLSX.utils.aoa_to_sheet(PLANTILLA_INFO);
-          info["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 96 }];
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Inventario");
-          XLSX.utils.book_append_sheet(wb, info, "Instrucciones");
-          XLSX.writeFile(wb, "plantilla-inventario-stokly.xlsx");
-        } catch (e) { setError("No se pudo generar la plantilla: " + e.message); }
-      }
+      () => { try { plantillaExcelBasica(); setError(""); } catch (e) { setError("No se pudo generar la plantilla: " + e.message); } }
     );
   }
 
+  // Con estilos: leyenda arriba + encabezados con * en rojo (los opcionales en gris)
+  async function plantillaExcelEstilo() {
+    const wb = new window.ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Inventario");
+    const nCols = PLANTILLA_HEADERS.length;
+
+    ws.mergeCells(1, 1, 1, nCols);
+    const ley = ws.getCell(1, 1);
+    ley.value = PLANTILLA_LEYENDA;
+    ley.font = { bold: true, size: 12, color: { argb: "FF1F2A37" } };
+    ley.alignment = { vertical: "middle" };
+    ws.getRow(1).height = 26;
+
+    PLANTILLA_HEADERS.forEach((h, i) => {
+      const c = ws.getCell(2, i + 1);
+      const ob = ES_OBLIGATORIO(h);
+      c.value = h;
+      c.font = { bold: true, color: { argb: ob ? "FFD93025" : "FF5F6368" } }; // rojo = obligatorio
+      c.alignment = { vertical: "middle", wrapText: true };
+      c.border = { bottom: { style: "medium", color: { argb: ob ? "FFD93025" : "FFD0D5DD" } } };
+      const ancho = Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 4;
+      ws.getColumn(i + 1).width = Math.min(40, Math.max(12, ancho));
+    });
+    ws.getRow(2).height = 34;
+
+    // Ejemplo como TEXTO: un código de barras guardado como número saldría en
+    // notación científica (7.50123E+12) y dejaría de servir para escanear.
+    PLANTILLA_EJEMPLO.forEach((v, i) => {
+      ws.getCell(3, i + 1).value = String(v == null ? "" : v);
+    });
+    ws.getColumn(12).numFmt = "0"; // código de barras: siempre dígitos completos
+
+    // Hoja 2: Instrucciones. Se escribe celda por celda (addRow no serializa
+    // filas en este bundle de ExcelJS y la hoja saldría vacía).
+    const ins = wb.addWorksheet("Instrucciones");
+    PLANTILLA_INFO.forEach((fila, r) => {
+      fila.forEach((val, c) => {
+        const cel = ins.getCell(r + 1, c + 1);
+        cel.value = String(val == null ? "" : val);
+        cel.alignment = { vertical: "top", wrapText: true };
+        if (r === 0) {
+          cel.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF00A884" } };
+        }
+      });
+    });
+    ins.getColumn(1).width = 26;
+    ins.getColumn(2).width = 18;
+    ins.getColumn(3).width = 110;
+
+    const buffer = await wb.xlsx.writeBuffer();
+    descargarBlob(
+      new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      "plantilla-inventario-stokly.xlsx"
+    );
+  }
+
+  // Respaldo sin colores (SheetJS) — columnas garantizadas en cualquier idioma de Excel
+  function plantillaExcelBasica() {
+    const ws = XLSX.utils.aoa_to_sheet([[PLANTILLA_LEYENDA], [], PLANTILLA_HEADERS, PLANTILLA_EJEMPLO]);
+    ws["!cols"] = PLANTILLA_HEADERS.map((h, i) => ({ wch: Math.min(46, Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 4) }));
+    const info = XLSX.utils.aoa_to_sheet(PLANTILLA_INFO);
+    info["!cols"] = [{ wch: 26 }, { wch: 18 }, { wch: 110 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    XLSX.utils.book_append_sheet(wb, info, "Instrucciones");
+    XLSX.writeFile(wb, "plantilla-inventario-stokly.xlsx");
+  }
+
   //2) Plantilla CSV con ";" (Excel español + Google Sheets la reconocen con columnas)
+  //   Va la leyenda de la fila 1 (allí no se puede pintar en rojo, por eso el 🔴)
   function descargarCSV() {
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    const csv = "\uFEFF" + [PLANTILLA_HEADERS, PLANTILLA_EJEMPLO].map(r => r.map(esc).join(";")).join("\n") + "\n";
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "plantilla-inventario-stokly.csv";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const filas = [[PLANTILLA_LEYENDA], [], PLANTILLA_HEADERS, PLANTILLA_EJEMPLO];
+    const csv = "\uFEFF" + filas.map(r => r.map(esc).join(";")).join("\n") + "\n";
+    descargarBlob(new Blob([csv], { type:"text/csv;charset=utf-8;" }), "plantilla-inventario-stokly.csv");
   }
 
   function processFile(file) {
@@ -3293,15 +3401,20 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       });
       return { ...p, image: ok.join("||") };
     });
+    // Filas sin nombre o sin stock no son productos: no se importan (se avisa).
+    const esInvalida = p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock");
+    const omitidas = finalP.filter(esInvalida).length;
+    const validos = finalP.filter(p => !esInvalida(p));
     let aviso = "";
     const rotasN = Object.keys(rotas).length;
-    if (fallos) aviso += `${fallos} foto(s) no se pudieron subir`;
+    if (omitidas) aviso = `${omitidas} fila(s) ignoradas (sin nombre o sin stock)`;
+    if (fallos) aviso += (aviso ? " · " : "") + `${fallos} foto(s) no se pudieron subir`;
     if (sinFoto) aviso += (aviso ? " · " : "") + `${sinFoto} sin foto (falta adjuntarla)`;
     if (rotasN) aviso += (aviso ? " · " : "") + `${rotasN} enlace(s) de imagen no cargan`;
     // 🏷️ Categoría y subcategoría: se asignan a cada producto importado y se
     // crean en el panel las que todavía no existan (igual que en "Nuevo producto").
     setSubiendo("🏷️ Asignando categorías…");
-    const conCat = await asignarCategorias(finalP);
+    const conCat = await asignarCategorias(validos);
     setSubiendo("");
     onImport(conCat, mode, aviso);
   }
@@ -3311,7 +3424,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   // bloquea la importación por este paso.
   async function asignarCategorias(lista) {
     const nk = s => String(s || "").trim().toLowerCase();
-    const base = lista.map(p => {
+    const base = lista.map(p0 => {
+      const { faltan, ...p } = p0; // "faltan" solo sirve para la vista previa
       const c = String(p.category || "").trim() || "Otros";
       return { ...p, category: c, subcategory: String(p.subcategory || "").trim(), emoji: catEmoji[c] || p.emoji || "📦" };
     });
@@ -3350,9 +3464,9 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const conFoto = parsed.filter(p => imgsDe(p.image).length > 0).length;
   // Filas sin SKU/código → Stokly les crea uno solo y con él sale su etiqueta
   const sinCod = parsed.filter(p => !codLimpio(p.sku)).length;
-  // Filas que no traen los obligatorios de categoría/subcategoría (no bloquean,
-  // pero conviene avisar antes de importar)
-  const sinCat = parsed.filter(p => !String(p.category||"").trim() || !String(p.subcategory||"").trim()).length;
+  // Campos con asterisco rojo en la plantilla (obligatorios) que están vacíos
+  const conFaltantes = parsed.filter(p => (p.faltan||[]).length > 0).length;
+  const omitidas = parsed.filter(p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock")).length;
   const pendAdj = parsed.filter(p =>
     imgsDe(p.image).some(v => v && !normalizarFotoURL(v) && !fotos[v.split(/[\\/]/).pop().toLowerCase()])
   ).length;
@@ -3380,8 +3494,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           {/* Plantilla oficial descargable */}
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
-              📄 <b>Plantilla oficial</b> — <b>4 columnas obligatorias</b> (nombre, categoría, subcategoría y stock) y todo lo demás <b>opcional</b>, con un producto de ejemplo.<br/>
-              <span style={{ color:C.muted, fontWeight:600 }}>En el Excel hay una hoja <b>Instrucciones</b> con qué va en cada columna · borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · <b style={{ color:C.text }}>sku, código de barras e imagen son opcionales</b>: si dejas el sku vacío, Stokly le crea el código a cada producto para su etiqueta · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
+              📄 <b>Plantilla oficial</b> — <b>todo es obligatorio menos sku, código de barras y stock mínimo</b>: los obligatorios van con <b style={{ color:C.red }}>* en ROJO</b> en los títulos de las columnas.<br/>
+              <span style={{ color:C.muted, fontWeight:600 }}>En el Excel hay una hoja <b>Instrucciones</b> con qué va en cada columna · borra la leyenda de arriba y la fila de ejemplo antes de importar · usa punto para decimales (199.99) · <b style={{ color:C.text }}>si dejas el sku vacío</b>, Stokly le crea el código a cada producto para su etiqueta · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con || · en el CSV el asterisco no se puede pintar, por eso trae la leyenda 🔴</span>
             </div>
             <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
             <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
@@ -3406,8 +3520,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                <b style={{ color:C.text }}>Obligatorio:</b> nombre, categoría, subcategoría y stock.<br/>
-                <b style={{ color:C.text }}>Opcional:</b> sku, código de barras, marca, color, talla, stock mínimo, precio, costo e imagen.<br/>
+                <b style={{ color:C.text }}>Obligatorio (*):</b> nombre, categoría, subcategoría, stock, marca, color, talla, precio, costo e imagen.<br/>
+                <b style={{ color:C.text }}>Opcional (sin *):</b> sku, código de barras y stock mínimo.<br/>
                 💡 Toma la <b>plantilla</b> de arriba (CSV), súbela a Google Sheets y llénala.<br/>
                 💡 Si dejas el <b>sku</b> vacío, Stokly le crea el código a cada producto para imprimir su etiqueta.
               </div>
@@ -3419,7 +3533,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
         </>}
         {step==="preview"&&<>
           <div style={{ fontWeight:900,fontSize:20,marginBottom:4 }}>✅ Vista previa</div>
-          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{sinCat?` · ⚠️ ${sinCat} sin categoría/subcategoría`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
+          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} filas · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{conFaltantes?` · 🔴 ${conFaltantes} con obligatorios sin llenar`:""}{omitidas?` · 🚫 ${omitidas} se omitirán (sin nombre/stock)`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
           <div style={{ display:"flex",gap:10,marginBottom:16 }}>
             {[{id:"merge",label:"➕ Agregar",desc:"No duplica productos"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{ flex:1,background:mode===m.id?C.greenLight:C.bg,border:`2px solid ${mode===m.id?C.green:C.border}`,borderRadius:14,padding:12,cursor:"pointer",fontFamily:"inherit" }}>
@@ -3459,11 +3573,17 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
                   ? <div style={{ width:38,height:38,borderRadius:9,background:adjunta?C.greenLight:C.bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:adjunta?"1.5px solid "+C.green:"1.5px dashed "+C.border }} title={nombreFoto}>📷</div>
                   : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}
                 <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div>
+                  <div style={{ fontWeight:800,fontSize:13,color:p.name?C.text:C.red }}>{p.name || "(sin nombre)"}</div>
                   <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}{p.sku?` · ${p.sku}`:" · 🏷️ Stokly creará el código"}</div>
-                  <div style={{ fontSize:10.5,fontWeight:800,color:(!p.category||!p.subcategory)?C.orange:C.green }}>
-                    {p.category || "⚠️ Sin categoría"}{p.subcategory ? ` · ${p.subcategory}` : " · ⚠️ Sin subcategoría"}
+                  <div style={{ fontSize:10.5,fontWeight:800,color:(p.category&&p.subcategory)?C.green:C.muted }}>
+                    {p.category || "Sin categoría"}{p.subcategory ? ` · ${p.subcategory}` : ""}
                   </div>
+                  {(p.faltan||[]).length>0 && (
+                    <div style={{ fontSize:10.5,fontWeight:800,color:(p.faltan.includes("nombre")||p.faltan.includes("stock"))?C.red:C.orange }}>
+                      {(p.faltan.includes("nombre")||p.faltan.includes("stock")) ? "🚫 Se omitirá — falta: " : "🔴 Falta: "}
+                      {(p.faltan||[]).join(", ")}
+                    </div>
+                  )}
                   {rotas[i] && <div style={{ fontSize:10.5,color:C.red,fontWeight:800 }}>⚠️ El enlace no carga — adjunta la foto o corrige el enlace</div>}
                   {nombreFoto && !adjunta && !rotas[i] && <div style={{ fontSize:10.5,color:C.orange,fontWeight:800 }}>📎 Falta adjuntar "{nombreFoto}"</div>}
                   {adjunta && <div style={{ fontSize:10.5,color:C.green,fontWeight:800 }}>✅ Foto lista: {nombreFoto}</div>}
