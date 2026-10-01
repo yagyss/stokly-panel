@@ -108,6 +108,26 @@ function useWindowWidth() {
   return w;
 }
 
+// ── Dinero a mano / traído del Excel ──────────────────────────────────────────
+// En Colombia 85.000 son OCHENTA Y CINCO MIL pesos, no 85 con decimales.
+// Antes hacíamos parseFloat("85.000") = 85 y el precio se perdía al importar.
+// Este lector entiende ambos formatos y devuelve SIEMPRE un número:
+//   "85.000" / "$85.000" / "85,000" -> 85000  ·  "199.99" -> 199.99  ·  "1.234,56" -> 1234.56
+const numDinero = (v) => {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return isFinite(v) ? v : 0;
+  let s = String(v).trim().replace(/[$\s\u00A0]/g, "").replace(/[^0-9.,]/g, "");
+  if (!s) return 0;
+  const p = s.lastIndexOf("."), c = s.lastIndexOf(",");
+  if (p !== -1 && c !== -1) s = p > c ? s.replace(/,/g, "") : s.replace(/\./g, "").replace(",", ".");
+  else if (c !== -1) s = /,\d{1,2}$/.test(s) ? s.replace(",", ".") : s.replace(/,/g, "");
+  else if (p !== -1 && /^\d{1,3}(\.\d{3})+$/.test(s) && !s.startsWith("0.")) s = s.replace(/\./g, "");
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+};
+// Unidades enteras (stock, stock mínimo) con la misma lectura de miles: "1.000" = 1000.
+const numEntero = (v) => Math.round(numDinero(v));
+
 const parseCSV = (text) => {
   const lines = text.trim().split("\n").map(l=>l.replace(/\r/g,"")).filter(l=>l.trim());
   if (lines.length < 2) return [];
@@ -158,7 +178,8 @@ const parseCSV = (text) => {
     if (!price)       faltan.push("precio venta");
     if (!cost)        faltan.push("costo");
     if (!image)       faltan.push("imagen");
-    return { id:newId(),name,sku,brand,color,size,category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(price.replace(/[^0-9.]/g,""))||0,cost:parseFloat(cost.replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image,barcode:get("barcode")||"",faltan };
+    // Números con el lector de dinero: "85.000" entra como 85 mil, "199.99" como decimal.
+    return { id:newId(),name,sku,brand,color,size,category,stock:numEntero(stockRaw),minStock:numEntero(get("minStock"))||5,price:numDinero(price),cost:numDinero(cost),sold:0,emoji:catEmoji[category]||"📦",image,barcode:get("barcode")||"",faltan };
   }).filter(Boolean);
 };
 
@@ -1470,7 +1491,7 @@ export default function Stokly() {
         />
       )}
       {modal==="import"  && <ImportModal    importView={importView} workspaceId={workspaceId} onClose={() => setModal(null)} onImport={(newP,mode,aviso) => {
-        let fotoN = 0, autoN = 0;
+        let fotoN = 0, autoN = 0, precioN = 0;
         // Coincide por SKU; si el archivo no trae SKU, por nombre+marca+color+talla
         const clave = x => [x.name, x.brand||"", x.color||"", x.size||""].map(v=>String(v).trim().toLowerCase()).join("|");
         const mismo = (ex, p) => { const cod = codLimpio(p.sku); return cod ? codLimpio(ex.sku) === cod : clave(ex) === clave(p); };
@@ -1481,15 +1502,21 @@ export default function Stokly() {
         else {
           const upd = new Map(); const add = [];
           newP.forEach(p => { const ex = products.find(x => mismo(x, p));
-            if(!ex) add.push(p);
-            else if(p.image && !ex.image){ upd.set(ex.id, {...ex, image:p.image}); fotoN++; }
+            if(!ex) { add.push(p); return; }
+            // "➕ Agregar" no duplica y además trae PRECIO y COSTO del archivo:
+            // así se corrigen los precios volviendo a importar la hoja ya arreglada.
+            const cambios = {};
+            if (p.price > 0 && Number(p.price) !== Number(ex.price)) { cambios.price = p.price; precioN++; }
+            if (p.cost > 0 && Number(p.cost) !== Number(ex.cost)) cambios.cost = p.cost;
+            if (p.image && !ex.image) { cambios.image = p.image; fotoN++; }
+            if (Object.keys(cambios).length) upd.set(ex.id, { ...ex, ...cambios });
           });
           autoN = add.filter(p => !codLimpio(p.sku)).length;
           const listos = conCodigos(add, products);
           setProducts(prev => [...prev.map(x => upd.get(x.id) || x), ...listos]);
         }
         setModal(null);
-        showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
+        showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${precioN?` · 💲 ${precioN} precio${precioN>1?"s":""} actualizado${precioN>1?"s":""}`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
       }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
@@ -2781,13 +2808,19 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
     if (!catId && !cats.error) { setErr("Elige la categoría"); return; }
     setErr("");
+    // Los números se convierten AL GUARDAR (no mientras se escribe), para poder
+    // escribir "85.000" = 85 mil pesos en precio, costo y stock.
+    const varsNum = vars.map(v => ({ ...v,
+      stock: numEntero(v.stock), minStock: numEntero(v.minStock),
+      price: numDinero(v.price), cost: numDinero(v.cost),
+    }));
     onSave({
       refFields: {
         ...rf,
         category: nombreCat || rf.category,
         categoryId: catId,
       },
-      vars,
+      vars: varsNum,
     });
   }
 
@@ -2859,7 +2892,7 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
                         type={fd.type || "text"}
                         placeholder={fd.ph}
                         value={fd.v == null ? "" : fd.v}
-                        onChange={e => updVar(i, fd.k, fd.type === "number" ? (e.target.value === "" ? "" : +e.target.value) : e.target.value)}
+                        onChange={e => updVar(i, fd.k, e.target.value)}
                       />
                     </div>
                   ))}
@@ -2957,7 +2990,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
     setErr("");
     const catFinal = nombreCat || f.category || "Otro";
-    onSave({ ...f, id:newId(), category: catFinal, categoryId: catId, stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[catFinal]||"📦", image });
+    onSave({ ...f, id:newId(), category: catFinal, categoryId: catId, stock:numEntero(f.stock), minStock:numEntero(f.minStock), price:numDinero(f.price), cost:numDinero(f.cost), sold:0, emoji:catEmoji[catFinal]||"📦", image });
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -3156,7 +3189,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     "código de barras (opcional)",
     "stock mínimo (opcional)",
   ];
-  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","10","Nike","Blanco","M","199.99","80.50","camiseta.jpg","CAM-001","7501234567890","5"];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","10","Nike","Blanco","M","185.000","80.500","camiseta.jpg","CAM-001","7501234567890","5"];
   // Hoja "Instrucciones" del Excel: qué es obligatorio y qué va en cada columna
   const PLANTILLA_INFO = [
     ["COLUMNA","* OBLIGATORIA","QUÉ PONER AHÍ"],
@@ -3166,8 +3199,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     ["* marca","✅ SÍ","Ej: Nike"],
     ["* color","✅ SÍ","Ej: Blanco"],
     ["* talla","✅ SÍ","Ej: M o 42"],
-    ["* precio venta","✅ SÍ","Usa punto para decimales: 199.99"],
-    ["* costo","✅ SÍ","Lo que te costó: 80.50 (si falta se toma 0)."],
+    ["* precio venta","✅ SÍ","85.000 = 85 mil pesos (también vale $85.000 o 85,000). Si quieres decimales: 199.99"],
+    ["* costo","✅ SÍ","Lo que te costó: 80.500 (o 80.50). Si falta se toma 0."],
     ["* imagen (foto o enlace)","✅ SÍ","Escribe el nombre de la foto (camiseta.jpg) y adjúntala al importar, o pega un enlace https://… Varias fotos: sepáralas con ||"],
     ["sku (opcional)","No (opcional)","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
     ["código de barras (opcional)","No (opcional)","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
