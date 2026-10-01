@@ -291,10 +291,12 @@ export const newId = () =>
     : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
 
 // ══════════════════════════════════════════════════════════════
-//  CATEGORÍAS Y SUBCATEGORÍAS (por panel)
+//  CATEGORÍAS (por panel)
 // ══════════════════════════════════════════════════════════════
 // Catálogo inicial de Stokly para tiendas de moda. Cada panel lo
 // recibe en su primera visita (si todavía no tiene categorías).
+// NOTA: la subcategoría se quitó de la app; la tabla `subcategories`
+// y los datos que ya existen se conservan en la base de datos.
 export const CATEGORIAS_BASE = [
   { name: "Ropa", subs: ["Camisetas","Blusas","Camisas","Vestidos","Conjuntos","Pantalones","Jeans","Faldas","Shorts","Bermudas","Chaquetas","Buzos y Suéteres","Ropa deportiva","Ropa interior","Pijamas","Ropa de bebé","Ropa infantil"] },
   { name: "Calzado", subs: ["Tenis","Zapatos","Sandalias","Tacones","Botas","Botines","Mocasines","Pantuflas","Chanclas","Calzado infantil"] },
@@ -309,12 +311,11 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 
 export function useCategorias(workspaceId) {
   const [categorias, setCategorias] = useState([]);
-  const [subcategorias, setSubcategorias] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
 
   const cargar = async () => {
-    if (!workspaceId) { setCategorias([]); setSubcategorias([]); return; }
+    if (!workspaceId) { setCategorias([]); return; }
     setCargando(true);
     setError("");
     try {
@@ -332,25 +333,9 @@ export function useCategorias(workspaceId) {
         cats = await ver(
           await supabase.from("categories").select("id,name,active").eq("workspace_id", workspaceId).order("name")
         );
-        const idPorNombre = {};
-        cats.forEach(c => { idPorNombre[norm(c.name)] = c.id; });
-        const filas = [];
-        CATEGORIAS_BASE.forEach(c => (c.subs || []).forEach(s => {
-          const catId = idPorNombre[norm(c.name)];
-          if (catId) filas.push({ workspace_id: workspaceId, category_id: catId, name: s });
-        }));
-        if (filas.length) {
-          await ver(await supabase
-            .from("subcategories")
-            .upsert(filas, { onConflict: "category_id,name", ignoreDuplicates: true }));
-        }
       }
 
-      const subs = await ver(
-        await supabase.from("subcategories").select("id,category_id,name,active").eq("workspace_id", workspaceId).order("name")
-      );
       setCategorias(cats);
-      setSubcategorias(subs);
     } catch (e) {
       console.error("[stokly] categorías:", e.message || e);
       setError("No se pudieron cargar las categorías — revisa tu conexión.");
@@ -377,23 +362,7 @@ export function useCategorias(workspaceId) {
     return { ok: true, id: data.id };
   };
 
-  const crearSubcategoria = async (categoryId, nombre) => {
-    const n = String(nombre || "").trim();
-    if (!categoryId) return { ok: false, error: "Primero elige una categoría" };
-    if (!n) return { ok: false, error: "Escribe el nombre de la subcategoría" };
-    if (duplicado(subcategorias.filter(s => String(s.category_id) === String(categoryId)), n)) {
-      return { ok: false, error: "Ya existe esa subcategoría en esta categoría" };
-    }
-    const { data, error: err } = await supabase
-      .from("subcategories")
-      .insert({ workspace_id: workspaceId, category_id: categoryId, name: n })
-      .select("id,category_id,name").single();
-    if (err) return { ok: false, error: err.code === "23505" ? "Ya existe esa subcategoría" : "No se pudo guardar — revisa tu conexión" };
-    setSubcategorias(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name, "es")));
-    return { ok: true, id: data.id };
-  };
-
-  return { categorias, subcategorias, cargando, error, crearCategoria, crearSubcategoria, recargar: cargar };
+  return { categorias, cargando, error, crearCategoria, recargar: cargar };
 }
 
 // ── Datos del NEGOCIO del panel: nombre + logo ────────────────────────────────

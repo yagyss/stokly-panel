@@ -84,7 +84,7 @@ function groupProducts(products) {
   const g = {};
   for (const p of products) {
     const k = `${p.name}__${p.brand}`;
-    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, categoryId:p.categoryId || "", subcategory:p.subcategory || "", subcategoryId:p.subcategoryId || "", price:p.price, cost:p.cost, image:p.image||"", variants:[] };
+    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, categoryId:p.categoryId || "", price:p.price, cost:p.cost, image:p.image||"", variants:[] };
     if (!g[k].image && p.image) g[k].image = p.image;
     g[k].variants.push(p);
   }
@@ -127,7 +127,7 @@ const parseCSV = (text) => {
       else { if (ch==='"'){ q=true; } else if (ch===delim){ out.push(cur); cur=""; } else { cur+=ch; } }
     } out.push(cur); return out; };
   const headers = splitLine(lineaHdr).map(h=>h.replace(/"/g,"").trim().toLowerCase());
-  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], subcategory:["subcategoría","subcategoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
+  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
   // "categoría" no debe caer en la columna "subcategoría" (ni "stock" en
   // "stock mínimo", ni "sku" en "código de barras"): se ignoran esas columnas.
   const findCol = k => {
@@ -143,7 +143,7 @@ const parseCSV = (text) => {
     if (!vals.some(v=>v)) return null; // línea vacía
     const get = k => cols[k]!==-1 ? (vals[cols[k]]||"") : "";
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
-    const category=get("category"),subcategory=get("subcategory");
+    const category=get("category");
     const brand=get("brand"),color=get("color"),size=get("size");
     const price=get("price"),cost=get("cost"),image=get("image");
     // Campos con ASTERISCO ROJO en la plantilla = OBLIGATORIOS. Si falta alguno
@@ -151,7 +151,6 @@ const parseCSV = (text) => {
     const faltan = [];
     if (!name)        faltan.push("nombre");
     if (!category)    faltan.push("categoría");
-    if (!subcategory) faltan.push("subcategoría");
     if (!stockRaw)    faltan.push("stock");
     if (!brand)       faltan.push("marca");
     if (!color)       faltan.push("color");
@@ -159,7 +158,7 @@ const parseCSV = (text) => {
     if (!price)       faltan.push("precio venta");
     if (!cost)        faltan.push("costo");
     if (!image)       faltan.push("imagen");
-    return { id:newId(),name,sku,brand,color,size,category,subcategory,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(price.replace(/[^0-9.]/g,""))||0,cost:parseFloat(cost.replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image,barcode:get("barcode")||"",faltan };
+    return { id:newId(),name,sku,brand,color,size,category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(price.replace(/[^0-9.]/g,""))||0,cost:parseFloat(cost.replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image,barcode:get("barcode")||"",faltan };
   }).filter(Boolean);
 };
 
@@ -1723,11 +1722,11 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   // Guarda la referencia: datos base a todas sus variantes, nuevas se agregan, quitadas se eliminan
   const saveEdit = ({ refFields, vars }) => {
     const oldName = editGroup.name, oldBrand = editGroup.brand || "";
-    // Datos de referencia que se aplican a TODAS sus variantes (incluye categorías)
+    // Datos de referencia que se aplican a TODAS sus variantes (incluye categoría).
+    // La subcategoría ya no se edita: si un producto antiguo la trae, se conserva.
     const cf = {
       name: refFields.name, brand: refFields.brand, category: refFields.category,
-      categoryId: refFields.categoryId || "", subcategory: refFields.subcategory || "",
-      subcategoryId: refFields.subcategoryId || "",
+      categoryId: refFields.categoryId || "",
     };
     setProducts(prev => {
       const refOldIds = new Set(prev.filter(p => p.name === oldName && (p.brand || "") === oldBrand).map(p => String(p.id)));
@@ -2602,7 +2601,7 @@ function OptionPickerModal({ title, subtitle, options, onClose }) {
   );
 }
 
-// ── 🔎 Selector con buscador (categorías / subcategorías) ─────────────────────
+// ── 🔎 Selector con buscador (categorías) ───────────────────────────
 // Panel con lista desplazable, campo de búsqueda en vivo (sin distinguir
 // mayúsculas de minúsculas) y opción de crear una nueva en el momento.
 function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiquetaCrear, tituloCrear, onCrear, deshabilitado }) {
@@ -2726,13 +2725,10 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
   const [visor, setVisor] = useState(null);         // 🔍 fotos a pantalla completa {fotos:[], i}
   const photoRef = useRef(null);
 
-  // 📂 Categorías y subcategorías del panel
+  // 📂 Categorías del panel
   const cats = useCategorias(workspaceId);
   const [catId, setCatId] = useState(group.categoryId ? String(group.categoryId) : "");
-  const [subId, setSubId] = useState(group.subcategoryId ? String(group.subcategoryId) : "");
-  const subsDeCat = cats.subcategorias.filter(s => String(s.category_id) === String(catId));
   const nombreCat = (cats.categorias.find(c => String(c.id) === String(catId)) || {}).name || "";
-  const nombreSub = (cats.subcategorias.find(s => String(s.id) === String(subId)) || {}).name || "";
 
   // Referencias antiguas: si solo tienen el texto de categoría, la emparejamos
   // con la categoría real para que no se pierda nada al editar.
@@ -2744,10 +2740,9 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (c) { setCatId(String(c.id)); setRf(p => ({ ...p, category: c.name })); }
   }, [cats.categorias, catId, group.category]);
 
-  // Al cambiar la categoría se limpia la subcategoría (nunca combinaciones inválidas)
+  // Al cambiar la categoría se limpia el error
   const elegirCat = (id) => {
     setCatId(id);
-    setSubId("");
     setErr("");
     const c = cats.categorias.find(x => String(x.id) === String(id));
     if (c) setRf(p => ({ ...p, category: c.name }));
@@ -2785,18 +2780,12 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (!vars.length) { setErr("Debe quedar al menos una variante"); return; }
     if (vars.some(v => v.stock === "" || v.stock == null || isNaN(+v.stock))) { setErr("Revisa el stock: debe ser un número en todas las variantes"); return; }
     if (!catId && !cats.error) { setErr("Elige la categoría"); return; }
-    if (!subId && !cats.error) { setErr("Elige la subcategoría"); return; }
-    if (nombreCat && subsDeCat.length && !subsDeCat.some(s => String(s.id) === String(subId))) {
-      setErr("La subcategoría no pertenece a la categoría elegida"); return;
-    }
     setErr("");
     onSave({
       refFields: {
         ...rf,
         category: nombreCat || rf.category,
         categoryId: catId,
-        subcategory: nombreSub,
-        subcategoryId: subId,
       },
       vars,
     });
@@ -2832,20 +2821,6 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
               etiquetaCrear="+ Crear nueva categoría"
               tituloCrear="Nueva categoría"
               onCrear={cats.crearCategoria}
-            />
-          </div>
-          <div style={{ gridColumn:"span 2" }}>
-            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:4 }}>Subcategoría *</div>
-            <SelectorBuscador
-              titulo="Seleccionar subcategoría"
-              opciones={subsDeCat}
-              valor={subId}
-              onElegir={id => { setSubId(id); setErr(""); }}
-              placeholder={catId ? "Seleccionar subcategoría ▼" : "Primero elige una categoría"}
-              etiquetaCrear="+ Crear nueva subcategoría"
-              tituloCrear="Nueva subcategoría"
-              onCrear={n => cats.crearSubcategoria(catId, n)}
-              deshabilitado={!catId}
             />
             {cats.error && <div style={{ fontSize:11.5, fontWeight:800, color:C.red, marginTop:6, lineHeight:1.4 }}>⚠️ {cats.error}</div>}
           </div>
@@ -2947,16 +2922,12 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
 
 function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   const [f, setF] = useState({ name:"",sku:"",brand:"",color:"",size:"",stock:"",minStock:"5",price:"",cost:"",barcode:"",category:"Ropa" });
-  // 📂 Categorías y subcategorías del panel
+  // 📂 Categorías del panel
   const cats = useCategorias(workspaceId);
   const [catId, setCatId] = useState("");
-  const [subId, setSubId] = useState("");
-  const subsDeCat = cats.subcategorias.filter(s => String(s.category_id) === String(catId));
   const nombreCat = (cats.categorias.find(c => String(c.id) === String(catId)) || {}).name || "";
-  const nombreSub = (cats.subcategorias.find(s => String(s.id) === String(subId)) || {}).name || "";
   const elegirCat = (id) => {
     setCatId(id);
-    setSubId(""); // al cambiar la categoría se limpia la subcategoría
     const c = cats.categorias.find(x => String(x.id) === String(id));
     if (c) setF(p => ({ ...p, category: c.name }));
   };
@@ -2982,14 +2953,11 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     if (!f.name.trim()) miss.push("Nombre");
     if (f.stock === "" || f.stock == null) miss.push("Stock");
     // Si las categorías no pudieron cargar (sin conexión), no bloqueamos el guardado
-    if (!cats.error) {
-      if (!catId) miss.push("Categoría");
-      if (!subId) miss.push("Subcategoría");
-    }
+    if (!cats.error && !catId) miss.push("Categoría");
     if (miss.length) { setErr("Faltan campos obligatorios: " + miss.join(", ")); return; }
     setErr("");
     const catFinal = nombreCat || f.category || "Otro";
-    onSave({ ...f, id:newId(), category: catFinal, categoryId: catId, subcategory: nombreSub, subcategoryId: subId, stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[catFinal]||"📦", image });
+    onSave({ ...f, id:newId(), category: catFinal, categoryId: catId, stock:+f.stock, minStock:+f.minStock, price:+f.price||0, cost:+f.cost||0, sold:0, emoji:catEmoji[catFinal]||"📦", image });
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -3014,20 +2982,6 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
               etiquetaCrear="+ Crear nueva categoría"
               tituloCrear="Nueva categoría"
               onCrear={cats.crearCategoria}
-            />
-          </div>
-          <div style={{ gridColumn:"span 2", marginTop:-4 }}>
-            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Subcategoría *</div>
-            <SelectorBuscador
-              titulo="Seleccionar subcategoría"
-              opciones={subsDeCat}
-              valor={subId}
-              onElegir={setSubId}
-              placeholder={catId ? "Seleccionar subcategoría ▼" : "Primero elige una categoría"}
-              etiquetaCrear="+ Crear nueva subcategoría"
-              tituloCrear="Nueva subcategoría"
-              onCrear={n => cats.crearSubcategoria(catId, n)}
-              deshabilitado={!catId}
             />
             {cats.error && <div style={{ fontSize:11.5, fontWeight:800, color:C.red, marginTop:6, lineHeight:1.4 }}>⚠️ {cats.error}</div>}
           </div>
@@ -3191,7 +3145,6 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const PLANTILLA_HEADERS = [
     "* nombre",
     "* categoría",
-    "* subcategoría",
     "* stock",
     "* marca",
     "* color",
@@ -3203,13 +3156,12 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     "código de barras (opcional)",
     "stock mínimo (opcional)",
   ];
-  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","Camisetas","10","Nike","Blanco","M","199.99","80.50","camiseta.jpg","CAM-001","7501234567890","5"];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","10","Nike","Blanco","M","199.99","80.50","camiseta.jpg","CAM-001","7501234567890","5"];
   // Hoja "Instrucciones" del Excel: qué es obligatorio y qué va en cada columna
   const PLANTILLA_INFO = [
     ["COLUMNA","* OBLIGATORIA","QUÉ PONER AHÍ"],
     ["* nombre","✅ SÍ","Como se ve en la tienda: Camiseta Básica"],
     ["* categoría","✅ SÍ","Ropa, Calzado, Bolsos y Carteras, Accesorios, Joyería y Bisutería, Belleza y Cuidado Personal u Otros. Si no existe en tu panel, Stokly la crea al importar."],
-    ["* subcategoría","✅ SÍ","Depende de la categoría (Camisetas, Tenis, Carteras…). Stokly la crea si todavía no existe."],
     ["* stock","✅ SÍ","Unidades disponibles, número entero (ej: 10)."],
     ["* marca","✅ SÍ","Ej: Nike"],
     ["* color","✅ SÍ","Ej: Blanco"],
@@ -3223,7 +3175,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     ["","",""],
     ["RECUERDA","",'Los que van con * en ROJO son obligatorios: si falta alguno, la vista previa te lo avisa. Borra la leyenda y la fila de ejemplo antes de importar. Archivo .xlsx o CSV; en Google Sheets sube el CSV y compártelo como "Cualquier persona con el enlace" (Lector).'],
   ];
-  // 📂 Categorías y subcategorías del panel (para asignarlas a lo importado)
+  // 📂 Categorías del panel (para asignarlas a lo importado)
   const cats = useCategorias(workspaceId);
 
   // Carga la librería XLSX solo si hace falta (compartida con "Descargar inventario")
@@ -3276,7 +3228,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     PLANTILLA_EJEMPLO.forEach((v, i) => {
       ws.getCell(3, i + 1).value = String(v == null ? "" : v);
     });
-    ws.getColumn(12).numFmt = "0"; // código de barras: siempre dígitos completos
+    ws.getColumn(11).numFmt = "0"; // código de barras: siempre dígitos completos
 
     // Hoja 2: Instrucciones. Se escribe celda por celda (addRow no serializa
     // filas en este bundle de ExcelJS y la hoja saldría vacía).
@@ -3411,15 +3363,15 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     if (fallos) aviso += (aviso ? " · " : "") + `${fallos} foto(s) no se pudieron subir`;
     if (sinFoto) aviso += (aviso ? " · " : "") + `${sinFoto} sin foto (falta adjuntarla)`;
     if (rotasN) aviso += (aviso ? " · " : "") + `${rotasN} enlace(s) de imagen no cargan`;
-    // 🏷️ Categoría y subcategoría: se asignan a cada producto importado y se
-    // crean en el panel las que todavía no existan (igual que en "Nuevo producto").
+    // 🏷️ Categoría: se asigna a cada producto importado y se crea en el
+    // panel la que todavía no exista (igual que en "Nuevo producto").
     setSubiendo("🏷️ Asignando categorías…");
     const conCat = await asignarCategorias(validos);
     setSubiendo("");
     onImport(conCat, mode, aviso);
   }
 
-  // Devuelve la lista con categoryId/subcategoryId resueltos por nombre.
+  // Devuelve la lista con categoryId resuelto por nombre.
   // Si las categorías no cargaron (sin conexión) devuelve todo igual: nunca se
   // bloquea la importación por este paso.
   async function asignarCategorias(lista) {
@@ -3427,14 +3379,13 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     const base = lista.map(p0 => {
       const { faltan, ...p } = p0; // "faltan" solo sirve para la vista previa
       const c = String(p.category || "").trim() || "Otros";
-      return { ...p, category: c, subcategory: String(p.subcategory || "").trim(), emoji: catEmoji[c] || p.emoji || "📦" };
+      return { ...p, category: c, emoji: catEmoji[c] || p.emoji || "📦" };
     });
     if (!workspaceId) return base;
     for (let i = 0; i < 50 && cats.cargando; i++) await new Promise(r => setTimeout(r, 100));
     if (cats.error) return base;
 
     const catPor = new Map(cats.categorias.map(c => [nk(c.name), c]));
-    const subPor = new Map(cats.subcategorias.map(s => [`${s.category_id}|${nk(s.name)}`, s]));
     const salida = [];
     for (const p of base) {
       let cat = catPor.get(nk(p.category)) || null;
@@ -3442,21 +3393,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
         const r = await cats.crearCategoria(p.category);
         if (r && r.ok) { cat = { id: r.id, name: p.category }; catPor.set(nk(p.category), cat); }
       }
-      let sub = null;
-      if (cat && p.subcategory) {
-        sub = subPor.get(`${cat.id}|${nk(p.subcategory)}`) || null;
-        if (!sub) {
-          const r = await cats.crearSubcategoria(cat.id, p.subcategory);
-          if (r && r.ok) { sub = { id: r.id, category_id: cat.id, name: p.subcategory }; subPor.set(`${cat.id}|${nk(p.subcategory)}`, sub); }
-        }
-      }
-      salida.push({
-        ...p,
-        category: cat ? cat.name : p.category,
-        categoryId: cat ? cat.id : "",
-        subcategory: sub ? sub.name : p.subcategory,
-        subcategoryId: sub ? sub.id : "",
-      });
+      salida.push({ ...p, category: cat ? cat.name : p.category, categoryId: cat ? cat.id : "" });
     }
     return salida;
   }
@@ -3520,7 +3457,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                <b style={{ color:C.text }}>Obligatorio (*):</b> nombre, categoría, subcategoría, stock, marca, color, talla, precio, costo e imagen.<br/>
+                <b style={{ color:C.text }}>Obligatorio (*):</b> nombre, categoría, stock, marca, color, talla, precio, costo e imagen.<br/>
                 <b style={{ color:C.text }}>Opcional (sin *):</b> sku, código de barras y stock mínimo.<br/>
                 💡 Toma la <b>plantilla</b> de arriba (CSV), súbela a Google Sheets y llénala.<br/>
                 💡 Si dejas el <b>sku</b> vacío, Stokly le crea el código a cada producto para imprimir su etiqueta.
@@ -3575,8 +3512,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800,fontSize:13,color:p.name?C.text:C.red }}>{p.name || "(sin nombre)"}</div>
                   <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}{p.sku?` · ${p.sku}`:" · 🏷️ Stokly creará el código"}</div>
-                  <div style={{ fontSize:10.5,fontWeight:800,color:(p.category&&p.subcategory)?C.green:C.muted }}>
-                    {p.category || "Sin categoría"}{p.subcategory ? ` · ${p.subcategory}` : ""}
+                  <div style={{ fontSize:10.5,fontWeight:800,color:p.category?C.green:C.muted }}>
+                    {p.category || "Sin categoría"}
                   </div>
                   {(p.faltan||[]).length>0 && (
                     <div style={{ fontSize:10.5,fontWeight:800,color:(p.faltan.includes("nombre")||p.faltan.includes("stock"))?C.red:C.orange }}>
