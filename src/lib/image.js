@@ -89,7 +89,7 @@ export async function borrarImagenPublica(url) {
 // y devuelve la URL pública. El RLS de Storage valida la carpeta.
 export async function uploadProductImage(file, workspaceId) {
   if (!workspaceId) throw new Error("No hay panel activo");
-  const blob = await resizeImage(file);
+  const blob = await prepararImagen(file);
   return subirBlob(blob, workspaceId);
 }
 
@@ -107,12 +107,31 @@ function subirBlob(blob, workspaceId) {
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Redimensiona; si el navegador se queda sin memoria (fotos muy grandes en
-// celulares), lo intenta con una imagen más pequeña antes de rendirse.
+// 📱 HEIC/HEIF es el formato de iPhone y de muchas fotos que llegan por
+//    WhatsApp: el navegador NO lo abre. Aquí se convierte a JPG. La librería
+//    se descarga SOLO cuando hace falta (no pesa para el resto de usuarios).
+async function convertirHEIC(file) {
+  const mod = await import("heic2any");
+  const heic2any = mod.default || mod;
+  const salida = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+  return Array.isArray(salida) ? salida[0] : salida;
+}
+
+// Redimensiona; si el navegador no puede con la foto, intenta otras vías
+// antes de rendirse: menos tamaño (memoria) y conversión HEIC → JPG.
 async function prepararImagen(file) {
   try { return await resizeImage(file); }
   catch (e) {
-    if (String(e && e.message).includes("procesar")) return await resizeImage(file, 640, 0.62);
+    const msg = String(e && e.message);
+    // Se quedó sin memoria con una foto enorme: la reduce y reintenta.
+    if (msg.includes("procesar")) return await resizeImage(file, 640, 0.62);
+    // No la pudo abrir (¿HEIC/HEIF?): la convierte a JPG y vuelve a intentar.
+    let jpg = null;
+    try { jpg = await convertirHEIC(file); } catch { /* no era HEIC */ }
+    if (jpg) {
+      try { return await resizeImage(jpg); }
+      catch { return await resizeImage(jpg, 640, 0.62); }
+    }
     throw e;
   }
 }
@@ -141,7 +160,7 @@ export function textoErrorFoto(err) {
   if (m.includes("quota") || m.includes("exceeded") || m.includes("storage size") || m.includes("excede"))
                                                return "se acabó el espacio para fotos en Supabase";
   if (m.includes("no se pudo leer") || m.includes("no válido"))
-                                               return "no pude leer esa imagen (¿es HEIC? usa una foto JPG)";
+                                               return "no pude abrir esa imagen: conviértela a JPG o PNG";
   if (m.includes("procesar"))                  return "el navegador no pudo procesar esa foto (prueba con otra)";
   if (m.includes("fetch") || m.includes("network") || m.includes("connection"))
                                                return "sin conexión a internet";
