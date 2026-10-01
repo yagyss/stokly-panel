@@ -3329,7 +3329,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     if(file.name.match(/\.xlsx?$/i)) {
       cargarXLSX("⏳ Cargando lector de Excel…", "No se pudo cargar el lector de Excel. Revisa tu conexión e inténtalo otra vez.", () => {
         const r=new FileReader();
-        r.onload=e=>{try{const X=window.XLSX;if(!X){setError("El lector de Excel no cargó. Vuelve a intentarlo.");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa los encabezados.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
+        r.onload=e=>{try{const X=window.XLSX;if(!X){setError("El lector de Excel no cargó. Vuelve a intentarlo.");return;}const wb=X.read(e.target.result,{type:"array"});const csv=X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);const p=parseCSV(csv);if(!p.length){setError("No se encontraron productos. Revisa que la fila de títulos tenga las columnas y que debajo haya filas con datos.");return;}setParsed(p);setStep("preview");}catch(err){setError("Error: "+err.message);}};
         r.readAsArrayBuffer(file);
       });
     } else if(file.name.match(/\.(csv|tsv|txt)$/i)) {
@@ -3359,7 +3359,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       if(t.startsWith("<!DOCTYPE")||t.startsWith("<html"))
         throw new Error("Google devolvió una página, no datos. Comparte la hoja: Compartir → Cualquier persona con el enlace → Lector.");
       const p=parseCSV(text);
-      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Revisa los encabezados: obligatorios nombre, categoría, subcategoría y stock."); return; }
+      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Revisa que la fila de títulos tenga las columnas y que debajo haya filas con datos."); return; }
       setParsed(p); setStep("preview");
     }catch(err){ setError(err.message||"No se pudo conectar con Google Sheets."); }
     finally{ setLoadingSheet(false); }
