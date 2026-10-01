@@ -147,11 +147,11 @@ const parseCSV = (text) => {
     const brand=get("brand"),color=get("color"),size=get("size");
     const price=get("price"),cost=get("cost"),image=get("image");
     // Campos con ASTERISCO ROJO en la plantilla = OBLIGATORIOS. Si falta alguno
-    // la vista previa lo avisa; sin nombre o sin stock la fila NO se importa.
+    // la vista previa lo avisa; sin nombre o sin stock actual la fila NO se importa.
     const faltan = [];
     if (!name)        faltan.push("nombre");
     if (!category)    faltan.push("categoría");
-    if (!stockRaw)    faltan.push("stock");
+    if (!stockRaw)    faltan.push("stock actual");
     if (!brand)       faltan.push("marca");
     if (!color)       faltan.push("color");
     if (!size)        faltan.push("talla");
@@ -3145,7 +3145,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const PLANTILLA_HEADERS = [
     "* nombre",
     "* categoría",
-    "* stock",
+    "* stock actual",
     "* marca",
     "* color",
     "* talla",
@@ -3162,16 +3162,16 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
     ["COLUMNA","* OBLIGATORIA","QUÉ PONER AHÍ"],
     ["* nombre","✅ SÍ","Como se ve en la tienda: Camiseta Básica"],
     ["* categoría","✅ SÍ","Ropa, Calzado, Bolsos y Carteras, Accesorios, Joyería y Bisutería, Belleza y Cuidado Personal u Otros. Si no existe en tu panel, Stokly la crea al importar."],
-    ["* stock","✅ SÍ","Unidades disponibles, número entero (ej: 10)."],
+    ["* stock actual","✅ SÍ","Unidades que hay AHORA en la tienda: número entero (ej: 10). Al vender, Stokly le resta a esta columna."],
     ["* marca","✅ SÍ","Ej: Nike"],
     ["* color","✅ SÍ","Ej: Blanco"],
     ["* talla","✅ SÍ","Ej: M o 42"],
     ["* precio venta","✅ SÍ","Usa punto para decimales: 199.99"],
     ["* costo","✅ SÍ","Lo que te costó: 80.50 (si falta se toma 0)."],
     ["* imagen (foto o enlace)","✅ SÍ","Escribe el nombre de la foto (camiseta.jpg) y adjúntala al importar, o pega un enlace https://… Varias fotos: sepáralas con ||"],
-    ["sku (opcional)","No","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
-    ["código de barras (opcional)","No","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
-    ["stock mínimo (opcional)","No","Avisa con 🟠/🟡 cuando el stock baje de este número. Si lo dejas vacío vale 5."],
+    ["sku (opcional)","No (opcional)","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
+    ["código de barras (opcional)","No (opcional)","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
+    ["stock mínimo (opcional)","No (opcional)","Es OPCIONAL: el nivel en el que quieres la alerta 🟠/🟡 (si lo dejas vacío vale 5). No es lo que hay en la tienda: eso va en «stock actual»."],
     ["","",""],
     ["RECUERDA","",'Los que van con * en ROJO son obligatorios: si falta alguno, la vista previa te lo avisa. Borra la leyenda y la fila de ejemplo antes de importar. Archivo .xlsx o CSV; en Google Sheets sube el CSV y compártelo como "Cualquier persona con el enlace" (Lector).'],
   ];
@@ -3353,13 +3353,13 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       });
       return { ...p, image: ok.join("||") };
     });
-    // Filas sin nombre o sin stock no son productos: no se importan (se avisa).
-    const esInvalida = p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock");
+    // Filas sin nombre o sin stock actual no son productos: no se importan (se avisa).
+    const esInvalida = p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock actual");
     const omitidas = finalP.filter(esInvalida).length;
     const validos = finalP.filter(p => !esInvalida(p));
     let aviso = "";
     const rotasN = Object.keys(rotas).length;
-    if (omitidas) aviso = `${omitidas} fila(s) ignoradas (sin nombre o sin stock)`;
+    if (omitidas) aviso = `${omitidas} fila(s) ignoradas (sin nombre o sin stock actual)`;
     if (fallos) aviso += (aviso ? " · " : "") + `${fallos} foto(s) no se pudieron subir`;
     if (sinFoto) aviso += (aviso ? " · " : "") + `${sinFoto} sin foto (falta adjuntarla)`;
     if (rotasN) aviso += (aviso ? " · " : "") + `${rotasN} enlace(s) de imagen no cargan`;
@@ -3403,7 +3403,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const sinCod = parsed.filter(p => !codLimpio(p.sku)).length;
   // Campos con asterisco rojo en la plantilla (obligatorios) que están vacíos
   const conFaltantes = parsed.filter(p => (p.faltan||[]).length > 0).length;
-  const omitidas = parsed.filter(p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock")).length;
+  const omitidas = parsed.filter(p => (p.faltan||[]).includes("nombre") || (p.faltan||[]).includes("stock actual")).length;
   const pendAdj = parsed.filter(p =>
     imgsDe(p.image).some(v => v && !normalizarFotoURL(v) && !fotos[v.split(/[\\/]/).pop().toLowerCase()])
   ).length;
@@ -3457,7 +3457,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                <b style={{ color:C.text }}>Obligatorio (*):</b> nombre, categoría, stock, marca, color, talla, precio, costo e imagen.<br/>
+                <b style={{ color:C.text }}>Obligatorio (*):</b> nombre, categoría, stock actual, marca, color, talla, precio, costo e imagen.<br/>
                 <b style={{ color:C.text }}>Opcional (sin *):</b> sku, código de barras y stock mínimo.<br/>
                 💡 Toma la <b>plantilla</b> de arriba (CSV), súbela a Google Sheets y llénala.<br/>
                 💡 Si dejas el <b>sku</b> vacío, Stokly le crea el código a cada producto para imprimir su etiqueta.
@@ -3470,7 +3470,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
         </>}
         {step==="preview"&&<>
           <div style={{ fontWeight:900,fontSize:20,marginBottom:4 }}>✅ Vista previa</div>
-          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} filas · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{conFaltantes?` · 🔴 ${conFaltantes} con obligatorios sin llenar`:""}{omitidas?` · 🚫 ${omitidas} se omitirán (sin nombre/stock)`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
+          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} filas · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{conFaltantes?` · 🔴 ${conFaltantes} con obligatorios sin llenar`:""}{omitidas?` · 🚫 ${omitidas} se omitirán (sin nombre/stock actual)`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
           <div style={{ display:"flex",gap:10,marginBottom:16 }}>
             {[{id:"merge",label:"➕ Agregar",desc:"No duplica productos"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{ flex:1,background:mode===m.id?C.greenLight:C.bg,border:`2px solid ${mode===m.id?C.green:C.border}`,borderRadius:14,padding:12,cursor:"pointer",fontFamily:"inherit" }}>
@@ -3516,8 +3516,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
                     {p.category || "Sin categoría"}
                   </div>
                   {(p.faltan||[]).length>0 && (
-                    <div style={{ fontSize:10.5,fontWeight:800,color:(p.faltan.includes("nombre")||p.faltan.includes("stock"))?C.red:C.orange }}>
-                      {(p.faltan.includes("nombre")||p.faltan.includes("stock")) ? "🚫 Se omitirá — falta: " : "🔴 Falta: "}
+                    <div style={{ fontSize:10.5,fontWeight:800,color:(p.faltan.includes("nombre")||p.faltan.includes("stock actual"))?C.red:C.orange }}>
+                      {(p.faltan.includes("nombre")||p.faltan.includes("stock actual")) ? "🚫 Se omitirá — falta: " : "🔴 Falta: "}
                       {(p.faltan||[]).join(", ")}
                     </div>
                   )}
