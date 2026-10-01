@@ -90,11 +90,61 @@ export async function borrarImagenPublica(url) {
 export async function uploadProductImage(file, workspaceId) {
   if (!workspaceId) throw new Error("No hay panel activo");
   const blob = await resizeImage(file);
+  return subirBlob(blob, workspaceId);
+}
+
+function subirBlob(blob, workspaceId) {
   const path = `${workspaceId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-  const { error } = await supabase.storage
+  return supabase.storage
     .from(PRODUCT_IMAGE_BUCKET)
-    .upload(path, blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
-  if (error) throw error;
-  const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+    .upload(path, blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false })
+    .then(({ error }) => {
+      if (error) throw error;
+      const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
+      return data.publicUrl;
+    });
+}
+
+const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Redimensiona; si el navegador se queda sin memoria (fotos muy grandes en
+// celulares), lo intenta con una imagen más pequeña antes de rendirse.
+async function prepararImagen(file) {
+  try { return await resizeImage(file); }
+  catch (e) {
+    if (String(e && e.message).includes("procesar")) return await resizeImage(file, 640, 0.62);
+    throw e;
+  }
+}
+
+// 📷 Subida confiable: reintenta una vez (fallas de red) y ya está lista
+//    para usar en cualquier sitio donde se suban fotos.
+export async function subirFotoProducto(file, workspaceId) {
+  if (!workspaceId) throw new Error("No hay panel activo");
+  const blob = await prepararImagen(file);
+  let ultimo = null;
+  for (let i = 0; i < 2; i++) {
+    try { return await subirBlob(blob, workspaceId); }
+    catch (e) { ultimo = e; if (i === 0) await esperar(700); }
+  }
+  throw ultimo;
+}
+
+// 💬 Traduce el error técnico a un mensaje corto y accionable.
+export function textoErrorFoto(err) {
+  const m = String((err && err.message) || err || "").toLowerCase();
+  if (m.includes("no hay panel"))              return "no hay panel activo: recarga la página";
+  if (m.includes("jwt") || m.includes("401") || m.includes("unauthorized") || m.includes("session"))
+                                               return "tu sesión expiró: recarga la página";
+  if (m.includes("row-level security") || m.includes("violates"))
+                                               return "no tienes permiso para subir fotos en este panel";
+  if (m.includes("quota") || m.includes("exceeded") || m.includes("storage size") || m.includes("excede"))
+                                               return "se acabó el espacio para fotos en Supabase";
+  if (m.includes("no se pudo leer") || m.includes("no válido"))
+                                               return "no pude leer esa imagen (¿es HEIC? usa una foto JPG)";
+  if (m.includes("procesar"))                  return "el navegador no pudo procesar esa foto (prueba con otra)";
+  if (m.includes("fetch") || m.includes("network") || m.includes("connection"))
+                                               return "sin conexión a internet";
+  if (m.includes("payload too large") || m.includes("413")) return "esa foto pesa demasiado";
+  return String((err && err.message) || "error desconocido").slice(0, 70);
 }

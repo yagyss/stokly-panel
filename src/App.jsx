@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from "react";
-import { uploadProductImage, uploadLogoImage, borrarImagenPublica } from "./lib/image.js";
+import { uploadProductImage, uploadLogoImage, borrarImagenPublica, subirFotoProducto, textoErrorFoto } from "./lib/image.js";
 import { supabase } from "./lib/supabase.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
@@ -1713,23 +1713,35 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
   const fileRef = useRef(null);
 
   // 📸 Sube fotos al COLOR elegido de una referencia (agrega, no reemplaza)
+  //    Cada foto se sube POR SEPARADO: si una falla, las demás sí se quedan.
   async function handlePhoto(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     if (!files.length || !photoTarget) return;
     setUploading(true);
     try {
-      const nuevas = [];
-      for (const f of files) { nuevas.push(await uploadProductImage(f, workspaceId)); }
-      const ids = new Set(photoTarget.ids.map(x => String(x)));
-      setProducts(prev => prev.map(x => {
-        if (!ids.has(String(x.id))) return x;
-        return { ...x, image: juntarImgs([...imgsDe(x.image), ...nuevas]) };
-      }));
-      showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""} al color`);
+      const nuevas = [], fallas = [];
+      for (const f of files) {
+        try { nuevas.push(await subirFotoProducto(f, workspaceId)); }
+        catch (err) { console.error("[stokly] foto:", err && err.message); fallas.push(err); }
+      }
+      if (nuevas.length) {
+        const ids = new Set(photoTarget.ids.map(x => String(x)));
+        setProducts(prev => prev.map(x => {
+          if (!ids.has(String(x.id))) return x;
+          return { ...x, image: juntarImgs([...imgsDe(x.image), ...nuevas]) };
+        }));
+      }
+      if (!fallas.length) {
+        showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""} al color`);
+      } else if (nuevas.length) {
+        showToast(`📷 ${nuevas.length} ok · ❌ ${fallas.length}: ${textoErrorFoto(fallas[fallas.length - 1])}`);
+      } else {
+        showToast("❌ " + textoErrorFoto(fallas[0]));
+      }
     } catch (err) {
       console.error("[stokly] foto:", err && err.message);
-      showToast("❌ No se pudo subir la foto");
+      showToast("❌ " + textoErrorFoto(err));
     } finally {
       setUploading(false);
     }
@@ -2873,13 +2885,22 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
     if (!files.length || !fotoColor) return;
     setUploading(true);
     try {
-      const nuevas = [];
-      for (const f of files) nuevas.push(await uploadProductImage(f, workspaceId));
-      setVars(vs => vs.map(v => ((v.color || "—") === fotoColor ? { ...v, image: juntarImgs([...imgsDe(v.image), ...nuevas]) } : v)));
-      if (showToast) showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""}`);
+      // Cada foto se sube POR SEPARADO: si una falla, las demás sí se quedan.
+      const nuevas = [], fallas = [];
+      for (const f of files) {
+        try { nuevas.push(await subirFotoProducto(f, workspaceId)); }
+        catch (err2) { console.error("[stokly] foto ref:", err2 && err2.message); fallas.push(err2); }
+      }
+      if (nuevas.length) {
+        setVars(vs => vs.map(v => ((v.color || "—") === fotoColor ? { ...v, image: juntarImgs([...imgsDe(v.image), ...nuevas]) } : v)));
+      }
+      if (!showToast) return;
+      if (!fallas.length) showToast(`📷 ${nuevas.length} foto${nuevas.length > 1 ? "s" : ""} agregada${nuevas.length > 1 ? "s" : ""}`);
+      else if (nuevas.length) showToast(`📷 ${nuevas.length} ok · ❌ ${fallas.length}: ${textoErrorFoto(fallas[fallas.length - 1])}`);
+      else showToast("❌ " + textoErrorFoto(fallas[0]));
     } catch (err2) {
       console.error("[stokly] foto ref:", err2 && err2.message);
-      if (showToast) showToast("❌ No se pudo subir la foto");
+      if (showToast) showToast("❌ " + textoErrorFoto(err2));
     } finally {
       setUploading(false);
     }
@@ -3066,8 +3087,8 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
     e.target.value = "";
     if (!file) return;
     setUploading(true);
-    try { setImage(await uploadProductImage(file, workspaceId)); }
-    catch (err) { console.error("[stokly] foto:", err && err.message); if (showToast) showToast("❌ No se pudo subir la foto"); }
+    try { setImage(await subirFotoProducto(file, workspaceId)); }
+    catch (err) { console.error("[stokly] foto:", err && err.message); if (showToast) showToast("❌ " + textoErrorFoto(err)); }
     finally { setUploading(false); }
   }
 
