@@ -2631,7 +2631,7 @@ function OptionPickerModal({ title, subtitle, options, onClose }) {
 // ── 🔎 Selector con buscador (categorías) ───────────────────────────
 // Panel con lista desplazable, campo de búsqueda en vivo (sin distinguir
 // mayúsculas de minúsculas) y opción de crear una nueva en el momento.
-function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiquetaCrear, tituloCrear, onCrear, deshabilitado }) {
+function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiquetaCrear, tituloCrear, onCrear, deshabilitado, buscarEn, phBusqueda }) {
   const [abierto, setAbierto] = useState(false);
   const [q, setQ] = useState("");
   const [creando, setCreando] = useState(false);
@@ -2640,8 +2640,11 @@ function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiq
   const [guardando, setGuardando] = useState(false);
 
   const elegida = opciones.find(o => String(o.id) === String(valor));
-  const texto = q.trim().toLowerCase();
-  const filtradas = texto ? opciones.filter(o => String(o.name || "").toLowerCase().includes(texto)) : opciones;
+  // 🔍 Escribe como quieras: "basica" encuentra "Básica" (sin importar acentos ni MAYÚSCULAS).
+  // `buscarEn` permite buscar también por SKU, código, color, talla… (los productos).
+  const plano = s => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const texto = plano(q.trim());
+  const filtradas = texto ? opciones.filter(o => plano(buscarEn ? buscarEn(o) : o.name).includes(texto)) : opciones;
 
   const cerrar = () => { setAbierto(false); setQ(""); setCreando(false); setNuevo(""); setMsg(""); };
 
@@ -2679,7 +2682,7 @@ function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiq
             <input
               className="stk-input"
               autoFocus
-              placeholder="🔍 Buscar…"
+              placeholder={phBusqueda || "🔍 Buscar…"}
               value={q}
               onChange={e => { setQ(e.target.value); setMsg(""); }}
             />
@@ -2699,13 +2702,14 @@ function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiq
               })}
               {!filtradas.length && (
                 <div style={{ color:C.muted, fontWeight:700, fontSize:13, padding:"8px 2px", lineHeight:1.5 }}>
-                  😕 Nada coincide con «{q}»<br />
-                  <span style={{ fontSize:11.5 }}>Puedes crearla aquí abajo 👇</span>
+                  😕 Nada coincide con «{q}»
+                  {etiquetaCrear && <><br />
+                    <span style={{ fontSize:11.5 }}>Puedes crearla aquí abajo 👇</span></>}
                 </div>
               )}
             </div>
 
-            {creando ? (
+            {etiquetaCrear && (creando ? (
               <div style={{ marginTop:10, background:C.blueLight, borderRadius:14, padding:"12px 14px" }}>
                 <div style={{ fontSize:11, fontWeight:900, color:C.blue, textTransform:"uppercase", marginBottom:6 }}>{tituloCrear}</div>
                 <input
@@ -2730,7 +2734,7 @@ function SelectorBuscador({ titulo, opciones, valor, onElegir, placeholder, etiq
               >
                 {etiquetaCrear}
               </button>
-            )}
+            ))}
 
             <div style={{ marginTop:12 }}>
               <button type="button" className="btn-outline" onClick={cerrar} style={{ width:"100%" }}>Cerrar</button>
@@ -3053,8 +3057,17 @@ function AddSaleModal({ products, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
   const [scanOpen,setScanOpen]=useState(false); const [err,setErr]=useState("");
   const p=products.find(x=>String(x.id)===String(pid)); const total=p?p.price*qty:0;
+  // 🔍 Opciones del buscador: productos con stock (más el ya elegido) con texto
+  //    para encontrarlos por nombre, marca, talla, SKU o código de barras.
+  const opcionesVenta = products
+    .filter(pp => pp.stock > 0 || String(pp.id) === String(pid))
+    .map(pp => ({
+      id: String(pp.id),
+      name: `${pp.emoji || "📦"} ${pp.name} — ${pp.color || "–"}/T${pp.size || "–"} (${pp.stock} disp.) — ${fmt(pp.price)}`,
+      txt: [pp.name, pp.brand, pp.sku, pp.barcode, pp.color, pp.size, pp.category].join(" "),
+    }));
   function save() {
-    if(!p){ setErr("⚠️ Elige un producto — o escanea su etiqueta con 📷"); return; }
+    if(!p){ setErr("⚠️ Busca el producto por su nombre, o escanea su etiqueta con 📷"); return; }
     if(qty<1){ setErr("⚠️ La cantidad debe ser al menos 1"); return; }
     if(p.stock<qty){ setErr(`⚠️ Solo hay ${p.stock} unidades disponibles de ${p.name}`); return; }
     setErr("");
@@ -3069,10 +3082,17 @@ function AddSaleModal({ products, onClose, onSave }) {
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Producto</div>
             <div style={{ display:"flex", gap:8 }}>
-              <select className="stk-input" style={{ flex:1, minWidth:0 }} value={pid} onChange={e=>{setPid(e.target.value); setErr("");}}>
-                <option value="">Selecciona un producto</option>
-                {products.filter(pp=>pp.stock>0||String(pp.id)===String(pid)).map(pp=><option key={pp.id} value={String(pp.id)}>{pp.emoji} {pp.name} — {pp.color}/T{pp.size} ({pp.stock} disp.) — {fmt(pp.price)}</option>)}
-              </select>
+              <div style={{ flex:1, minWidth:0 }}>
+                <SelectorBuscador
+                  titulo="Elegir producto"
+                  phBusqueda="🔍 Escribe el nombre (también: marca, talla, SKU…)"
+                  placeholder="🔍 Buscar producto por nombre ▼"
+                  opciones={opcionesVenta}
+                  valor={pid}
+                  onElegir={id => { setPid(id); setErr(""); }}
+                  buscarEn={o => o.txt}
+                />
+              </div>
               <button className="filter-btn" onClick={()=>setScanOpen(true)} title="Escanear la etiqueta de la prenda con la cámara" style={{ padding:"0 14px", flexShrink:0 }}>📷</button>
             </div>
           </div>
