@@ -84,8 +84,11 @@ function groupProducts(products) {
   const g = {};
   for (const p of products) {
     const k = `${p.name}__${p.brand}`;
-    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, categoryId:p.categoryId || "", price:p.price, cost:p.cost, image:p.image||"", variants:[] };
+    if (!g[k]) g[k] = { name:p.name, brand:p.brand, emoji:p.emoji, category:p.category, categoryId:p.categoryId || "", price:p.price, cost:p.cost, image:p.image||"", imgs:[], variants:[] };
     if (!g[k].image && p.image) g[k].image = p.image;
+    // 📸 Fotos de TODOS los colores de la referencia, en orden: es lo que
+    //    deslizas con el dedo en la foto principal (carrusel).
+    imgsDe(p.image).forEach(u => { if (!g[k].imgs.includes(u)) g[k].imgs.push(u); });
     g[k].variants.push(p);
   }
   return Object.values(g);
@@ -202,6 +205,24 @@ const normalizarFotoURL = (v) => {
 const imgsDe = (v) => String(v || "").split("||").map(s => s.trim()).filter(Boolean);
 const juntarImgs = (arr) => [...new Set(arr.map(s => String(s).trim()).filter(Boolean))].join("||");
 const primeraImg = (v) => imgsDe(v)[0] || "";
+
+// 💰 Venta con varias referencias: los renglones de la MISMA venta llevan el
+//    mismo prefijo de id "<uuid>::<n>" (la columna id es texto, así no hay que
+//    tocar la base de datos). Una venta vieja (sin "::") es un grupo de 1.
+const grupoVenta = (id) => { const s = String(id || ""); const i = s.indexOf("::"); return i > 0 ? s.slice(0, i) : s; };
+
+// 🧾 Historial: junta los renglones de UNA misma venta para mostrarla como una
+//    sola venta con varias referencias. Lo que es viejo (sin "::") va solo.
+function agruparVentas(ventas) {
+  const orden = [], map = {};
+  for (const s of ventas) {
+    const k = grupoVenta(s.id);
+    if (!map[k]) { map[k] = { k, items: [], total: 0 }; orden.push(map[k]); }
+    map[k].items.push(s);
+    map[k].total += s.total || 0;
+  }
+  return orden;
+}
 
 // 🏷️ SKU y código de barras son OPCIONALES: si el usuario no tiene esos datos,
 // Stokly le crea un código único. Es el que se imprime en la etiqueta (nombre,
@@ -659,10 +680,40 @@ function LabelsModal({ products, onClose, showToast }) {
 }
 
 // ── 🔍 VISOR DE FOTOS — se abre a pantalla completa al tocar una foto ─────────
+// 📸 FOTO PRINCIPAL CON DEDO — desliza para recorrer todas las fotos de la
+//    referencia (todos sus colores). Tocando se abre la foto en grande.
+function CarruselFotos({ fotos, w, h, onAbrir, style }) {
+  const lista = (fotos || []).filter(Boolean);
+  const [i, setI] = useState(0);
+  const arr = useRef({ x:0, y:0, moved:false });
+  if (!lista.length) return null;
+  const idx = Math.min(i, lista.length - 1);
+  const ir = d => setI(x => (x + d + lista.length) % lista.length);
+  const soltar = e => {
+    const dx = e.clientX - arr.current.x, dy = e.clientY - arr.current.y;
+    if (Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy)) { ir(dx < 0 ? 1 : -1); arr.current.moved = true; }
+  };
+  return (
+    <div
+      onPointerDown={e => { arr.current = { x:e.clientX, y:e.clientY, moved:false }; }}
+      onPointerUp={soltar}
+      onClick={e => { e.stopPropagation(); if (arr.current.moved) { arr.current.moved = false; return; } if (onAbrir) onAbrir(idx); }}
+      title={lista.length > 1 ? "Desliza con el dedo para ver las fotos de todos los colores" : "Ver foto completa"}
+      style={{ position:"relative", width:w, height:h, overflow:"hidden", touchAction:"pan-y", cursor:"zoom-in", flexShrink:0, ...style }}
+    >
+      <img src={lista[idx]} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none", display:"block" }} />
+      {lista.length > 1 && (
+        <div style={{ position:"absolute", right:3, bottom:3, background:"rgba(0,0,0,.62)", color:"#fff", fontSize:9, fontWeight:900, lineHeight:1.4, borderRadius:8, padding:"1px 5px", pointerEvents:"none" }}>{idx + 1}/{lista.length}</div>
+      )}
+    </div>
+  );
+}
+
 function VisorFotos({ fotos, inicio = 0, onClose }) {
   const lista = (fotos || []).filter(Boolean);
   const [i, setI] = useState(Math.min(inicio || 0, Math.max(0, lista.length - 1)));
   const ir = (d) => setI(x => (x + d + lista.length) % lista.length);
+  const arr = useRef({ x:0, y:0, moved:false });
   useEffect(() => {
     const h = (e) => {
       if (e.key === "Escape") onClose();
@@ -675,7 +726,16 @@ function VisorFotos({ fotos, inicio = 0, onClose }) {
   }, [lista.length]);
   if (!lista.length) return null;
   return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.93)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+    <div
+      onPointerDown={e => { arr.current = { x:e.clientX, y:e.clientY, moved:false }; }}
+      onPointerUp={e => {
+        if (lista.length < 2) return;
+        const dx = e.clientX - arr.current.x, dy = e.clientY - arr.current.y;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { ir(dx < 0 ? 1 : -1); arr.current.moved = true; }
+      }}
+      onClick={e => { if (arr.current.moved) { arr.current.moved = false; e.stopPropagation(); return; } onClose(); }}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.93)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16, touchAction:"pan-y" }}
+    >
       <img src={lista[i]} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:"100%", maxHeight:"82vh", borderRadius:14, objectFit:"contain" }} />
       {lista.length > 1 && (
         <>
@@ -685,7 +745,7 @@ function VisorFotos({ fotos, inicio = 0, onClose }) {
         </>
       )}
       <button onClick={e => { e.stopPropagation(); onClose(); }} title="Cerrar" style={{ position:"fixed", top:14, right:14, width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,.16)", border:"none", color:"white", fontSize:18, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
-      <div onClick={e => e.stopPropagation()} style={{ position:"fixed", bottom:26, left:14, color:"rgba(255,255,255,.7)", fontWeight:700, fontSize:11.5, background:"rgba(0,0,0,.4)", borderRadius:16, padding:"5px 11px" }}>Toca fuera de la foto para cerrar</div>
+      <div onClick={e => e.stopPropagation()} style={{ position:"fixed", bottom:26, left:14, color:"rgba(255,255,255,.7)", fontWeight:700, fontSize:11.5, background:"rgba(0,0,0,.4)", borderRadius:16, padding:"5px 11px" }}>{lista.length > 1 ? "👆 Desliza para ver todas · toca fuera para cerrar" : "Toca fuera de la foto para cerrar"}</div>
     </div>
   );
 }
@@ -1518,7 +1578,7 @@ export default function Stokly() {
         setModal(null);
         showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${precioN?` · 💲 ${precioN} precio${precioN>1?"s":""} actualizado${precioN>1?"s":""}`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
       }} />}
-      {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
+      {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); const porProd = {}; arr.forEach(s => { if (s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)]||0) + (s.qty||0); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; return q ? {...p, stock:p.stock-q, sold:p.sold+q} : p; })); setModal(null); showToast("💰 Venta: "+fmt(arr.reduce((a,s)=>a+(s.total||0),0))); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {modal==="negocio" && <NegocioModal negocio={negocio} workspaceId={workspaceId} onClose={() => setModal(null)} onGuardar={guardarNegocio} showToast={showToast} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
@@ -1930,6 +1990,8 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           {groups.map((group, gi) => {
             const hasAlert = group.variants.some(v=>v.stock<=v.minStock);
             const totalStock = group.variants.reduce((a,v)=>a+v.stock,0);
+            // 📸 Todas las fotos de la referencia (todos sus colores) para la foto principal
+            const fotosGrupo = (group.imgs && group.imgs.length) ? group.imgs : imgsDe(group.image);
             const isExpanded = expandedGroup===gi || search.length>0;
             const margin = group.price ? Math.round(((group.price-group.cost)/group.price)*100) : 0;
             return (
@@ -1938,7 +2000,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{group.image ? <img src={primeraImg(group.image)} alt="" onClick={e => { e.stopPropagation(); setVisor({ fotos: imgsDe(group.image), i:0 }); }} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"zoom-in" }} title="Ver foto completa" /> : group.emoji}</div>
+                      <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{group.image ? <CarruselFotos fotos={fotosGrupo} w={64} h={64} onAbrir={ix => setVisor({ fotos: fotosGrupo, i: ix })} /> : group.emoji}</div>
                       <div>
                         <div style={{ fontWeight:900, fontSize:16, color:C.text }}>{group.name}</div>
                         <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{group.brand} · {group.variants.length} variantes</div>
@@ -2063,7 +2125,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                   {p.image
-                    ? <img src={primeraImg(p.image)} alt="" onClick={() => setVisor({ fotos: imgsDe(p.image), i:0 })} title="Ver foto completa" style={{ width:54, height:54, borderRadius:13, objectFit:"cover", flexShrink:0, border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
+                    ? <CarruselFotos fotos={imgsDe(p.image)} w={54} h={54} onAbrir={ix => setVisor({ fotos: imgsDe(p.image), i: ix })} style={{ borderRadius:13, border:"1.5px solid #EAECF5" }} />
                     : <div className="color-dot" style={{ width:34,height:34, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
@@ -2111,7 +2173,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                   const td = { padding:"9px 10px", borderBottom:"1px solid "+C.border+"60", whiteSpace:"nowrap" };
                   return (
                     <tr key={p.id}>
-                      <td style={td}>{p.image ? <img src={primeraImg(p.image)} alt="" onClick={() => setVisor({ fotos: imgsDe(p.image), i:0 })} title="Ver foto completa" style={{ width:46, height:46, borderRadius:11, objectFit:"cover", display:"block", cursor:"zoom-in" }} /> : <span style={{ fontSize:24 }}>{p.emoji}</span>}</td>
+                      <td style={td}>{p.image ? <CarruselFotos fotos={imgsDe(p.image)} w={46} h={46} onAbrir={ix => setVisor({ fotos: imgsDe(p.image), i: ix })} style={{ borderRadius:11 }} /> : <span style={{ fontSize:24 }}>{p.emoji}</span>}</td>
                       <td style={{ ...td, fontWeight:800 }}>{p.name}</td>
                       <td style={{ ...td, color:C.muted, fontWeight:600 }}>{p.sku}</td>
                       <td style={td}>{p.brand||"—"}</td>
@@ -2215,21 +2277,46 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
             <button onClick={clearSales} title="Borrar todas las ventas (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar ventas</button>
           )}
         </div>
-        {[...ventasR].reverse().map(s=>{
-          const p=products.find(x=>x.id===s.productId);
+        {agruparVentas(ventasR).reverse().map(g=>{
+          const s0=g.items[0];
+          const p0=products.find(x=>String(x.id)===String(s0.productId));
+          const varias=g.items.length>1;
           return (
-            <div key={s.id} className="row-item">
-              <div style={{ width:38,height:38, background:C.greenLight, borderRadius:12, display:"flex",alignItems:"center",justifyContent:"center",fontSize:20 }}>{p?.emoji||"📦"}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:800, fontSize:14 }}>{p?.name||"Producto"}</div>
-                <div style={{ fontSize:11, color:C.muted, fontWeight:600, display:"flex", gap:6, alignItems:"center" }}>
-                  {p&&<div className="color-dot" style={{ width:10,height:10,background:getColorCSS(p.color) }} />}
-                  {s.date} · {s.qty} uds · {s.method}
-                </div>
+            <div key={g.k} className="row-item">
+              <div style={{ width:38,height:38, background:C.greenLight, borderRadius:12, display:"flex",alignItems:"center",justifyContent:"center",fontSize:20, flexShrink:0 }}>{p0?.emoji||"📦"}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                {varias ? (
+                  <>
+                    <div style={{ fontWeight:800, fontSize:14 }}>🛍️ Venta · {g.items.length} referencias</div>
+                    <div style={{ fontSize:11, color:C.muted, fontWeight:600, display:"flex", gap:6, alignItems:"center" }}>
+                      {s0.date} · {g.items.reduce((a,s)=>a+(s.qty||0),0)} uds · {s0.method}
+                    </div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:2, marginTop:5 }}>
+                      {g.items.map(s=>{
+                        const p=products.find(x=>String(x.id)===String(s.productId));
+                        return (
+                          <div key={s.id} style={{ display:"flex", gap:8, fontSize:11.5, fontWeight:700, alignItems:"center" }}>
+                            <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p?.name||"Producto"}{p?` · ${p.color||"–"}/T${p.size||"–"}`:""}</span>
+                            <span style={{ color:C.muted, flexShrink:0 }}>×{s.qty}</span>
+                            <span style={{ flexShrink:0, minWidth:62, textAlign:"right" }}>{fmt(s.total)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontWeight:800, fontSize:14 }}>{p0?.name||"Producto"}</div>
+                    <div style={{ fontSize:11, color:C.muted, fontWeight:600, display:"flex", gap:6, alignItems:"center" }}>
+                      {p0&&<div className="color-dot" style={{ width:10,height:10,background:getColorCSS(p0.color) }} />}
+                      {s0.date} · {s0.qty} uds · {s0.method}
+                    </div>
+                  </>
+                )}
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ fontWeight:900, fontSize:16, color:C.green }}>{fmt(s.total)}</div>
-                <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar la venta del ${s.date} por ${fmt(s.total)}?\n\nSe borrará PERMANENTEMENTE.`)) return; setSales(prev=>prev.filter(x=>x.id!==s.id)); showToast("🗑️ Venta eliminada"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+              <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                <div style={{ fontWeight:900, fontSize:16, color:C.green }}>{fmt(g.total)}</div>
+                <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar la venta del ${s0.date} por ${fmt(g.total)}${varias?` (${g.items.length} referencias)`:""}?\n\nSe borrará PERMANENTEMENTE.`)) return; setSales(prev=>prev.filter(x=>grupoVenta(x.id)!==g.k)); showToast("🗑️ Venta eliminada"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
               </div>
             </div>
           );
@@ -3056,22 +3143,60 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
 function AddSaleModal({ products, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
   const [scanOpen,setScanOpen]=useState(false); const [err,setErr]=useState("");
-  const p=products.find(x=>String(x.id)===String(pid)); const total=p?p.price*qty:0;
-  // 🔍 Opciones del buscador: productos con stock (más el ya elegido) con texto
-  //    para encontrarlos por nombre, marca, talla, SKU o código de barras.
+  // 🛒 Varias referencias en UNA MISMA venta: se van agregando renglones aquí
+  //    y al guardar se registran todos juntos (mismo día, mismo método).
+  const [items,setItems]=useState([]);
+  const p=products.find(x=>String(x.id)===String(pid));
+  const renglones = items
+    .map(it => ({ ...it, pr: products.find(x=>String(x.id)===String(it.pid)) }))
+    .filter(r => r.pr);
+  const total = renglones.reduce((a,r)=>a + r.pr.price*r.qty, 0);
+  const unidades = renglones.reduce((a,r)=>a + r.qty, 0);
+  // 🔍 Opciones del buscador: productos con stock (más los ya agregados y el elegido)
+  //    con texto para encontrarlos por nombre, marca, talla, SKU o código de barras.
   const opcionesVenta = products
-    .filter(pp => pp.stock > 0 || String(pp.id) === String(pid))
+    .filter(pp => pp.stock > 0 || String(pp.id) === String(pid) || items.some(i => String(i.pid) === String(pp.id)))
     .map(pp => ({
       id: String(pp.id),
       name: `${pp.emoji || "📦"} ${pp.name} — ${pp.color || "–"}/T${pp.size || "–"} (${pp.stock} disp.) — ${fmt(pp.price)}`,
       txt: [pp.name, pp.brand, pp.sku, pp.barcode, pp.color, pp.size, pp.category].join(" "),
     }));
+  // ➕ Agrega una referencia a la venta (botón ➕ o escáner 📷)
+  function agregarProducto(prod, cantidad) {
+    if(!prod){ setErr("⚠️ Busca el producto por su nombre, o escanea su etiqueta con 📷"); return; }
+    if(cantidad<1){ setErr("⚠️ La cantidad debe ser al menos 1"); return; }
+    if(prod.stock<cantidad){ setErr(`⚠️ Solo hay ${prod.stock} unidades disponibles de ${prod.name}`); return; }
+    setItems(prev => {
+      const i = prev.findIndex(x => String(x.pid) === String(prod.id));
+      if(i >= 0){ const arr=[...prev]; arr[i]={...arr[i], qty: Math.min(prod.stock, arr[i].qty + cantidad)}; return arr; }
+      return [...prev, { pid:String(prod.id), qty:+cantidad }];
+    });
+    setPid(""); setQty(1); setErr("");
+  }
+  const agregar = () => agregarProducto(p, qty);
+  // ✕ / − + sobre los renglones ya agregados
+  const quitar = (idQ) => setItems(prev => prev.filter(x => String(x.pid) !== String(idQ)));
+  const cambiar = (idQ, d) => setItems(prev => prev.map(x => {
+    if(String(x.pid) !== String(idQ)) return x;
+    const st = products.find(y => String(y.id) === String(x.pid))?.stock || 1;
+    return { ...x, qty: Math.max(1, Math.min(st, x.qty + d)) };
+  }));
   function save() {
-    if(!p){ setErr("⚠️ Busca el producto por su nombre, o escanea su etiqueta con 📷"); return; }
-    if(qty<1){ setErr("⚠️ La cantidad debe ser al menos 1"); return; }
-    if(p.stock<qty){ setErr(`⚠️ Solo hay ${p.stock} unidades disponibles de ${p.name}`); return; }
+    if(!renglones.length){ setErr("⚠️ Agrega al menos una referencia con el botón ➕"); return; }
+    const mal = renglones.find(r => (r.pr.stock || 0) < r.qty);
+    if(mal){ setErr(`⚠️ Solo hay ${mal.pr.stock} unidades disponibles de ${mal.pr.name}`); return; }
     setErr("");
-    onSave({id:newId(),productId:String(pid),qty:+qty,total,date:hoyISO(),method},String(pid),+qty);
+    // Todo lo de esta venta comparte el mismo prefijo de id: así en el historial
+    // se ven juntos y se borran juntos. Con 1 sola referencia se guarda como antes.
+    const g = renglones.length > 1 ? `${newId()}::` : "";
+    onSave(renglones.map((r,i)=>({
+      id: g ? `${g}${i+1}` : newId(),
+      productId:String(r.pid),
+      qty:+r.qty,
+      total:r.pr.price*r.qty,
+      date:hoyISO(),
+      method,
+    })));
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -3097,36 +3222,59 @@ function AddSaleModal({ products, onClose, onSave }) {
             </div>
           </div>
           <div>
-            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Cantidad</div>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Cantidad a agregar</div>
             <div style={{ display:"flex",gap:16,alignItems:"center",justifyContent:"center" }}>
               <button className="stock-btn" style={{ width:48,height:48,fontSize:24 }} onClick={()=>setQty(q=>Math.max(1,q-1))}>−</button>
               <span style={{ fontSize:36,fontWeight:900,minWidth:50,textAlign:"center" }}>{qty}</span>
               <button className="stock-btn" style={{ width:48,height:48,fontSize:24 }} onClick={()=>setQty(q=>Math.min(p?.stock||99,q+1))}>+</button>
             </div>
+            <button className="btn-main" onClick={agregar} style={{ width:"100%", marginTop:12, padding:"13px 14px", opacity:p?1:.55 }}>➕ Agregar a la venta</button>
           </div>
+          {/* 🛒 Referencias ya agregadas a esta venta */}
+          {renglones.length>0 && (
+            <div>
+              <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>🛒 En esta venta · {renglones.length} {renglones.length===1?"referencia":"referencias"} · {unidades} uds</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {renglones.map(r=>(
+                  <div key={String(r.pid)} style={{ display:"flex", gap:8, alignItems:"center", background:C.bg, border:"1px solid "+C.border, borderRadius:14, padding:"9px 10px" }}>
+                    <div style={{ width:34,height:34, background:C.greenLight, borderRadius:10, display:"flex",alignItems:"center",justifyContent:"center", fontSize:17, flexShrink:0 }}>{r.pr.emoji||"📦"}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.name}</div>
+                      <div style={{ fontSize:10.5, color:C.muted, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.color||"–"} · T{r.pr.size||"–"} · {fmt(r.pr.price)} c/u</div>
+                    </div>
+                    <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0 }}>
+                      <button className="stock-btn" onClick={()=>cambiar(r.pid,-1)} title="Menos unidades">−</button>
+                      <span style={{ fontWeight:900, minWidth:18, textAlign:"center", fontSize:14 }}>{r.qty}</span>
+                      <button className="stock-btn" onClick={()=>cambiar(r.pid,1)} title="Más unidades">+</button>
+                    </div>
+                    <div style={{ fontWeight:900, fontSize:14, color:C.green, flexShrink:0, minWidth:70, textAlign:"right" }}>{fmt(r.pr.price*r.qty)}</div>
+                    <button title="Quitar de la venta" onClick={()=>quitar(r.pid)} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit",flexShrink:0 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Método de pago</div>
             <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
               {["Efectivo","Tarjeta","Nequi","Transferencia","Daviplata"].map(m=><button key={m} className={`filter-btn ${method===m?"active":""}`} onClick={()=>setMethod(m)}>{m}</button>)}
             </div>
           </div>
-          {p&&<div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}><div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div><div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div></div>}
+          {renglones.length>0 &&<div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}><div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div><div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div></div>}
         </div>
         {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
-          <button className="btn-main" onClick={save} style={{ flex:2 }}>Confirmar venta</button>
+          <button className="btn-main" onClick={save} style={{ flex:2 }}>{renglones.length>1 ? `Guardar venta · ${renglones.length} ref.` : "Confirmar venta"}</button>
         </div>
-        {/* 📷 Escanear la etiqueta para elegir el producto al instante */}
+        {/* 📷 Escanear la etiqueta para agregar el producto al instante */}
         {scanOpen && (
           <ScanModal
             onClose={()=>setScanOpen(false)}
             onScan={(code) => {
               const f = buscarPorCodigo(products, code);
               if (f) {
-                setPid(String(f.id));
-                setQty(1);
-                setErr("");
+                agregarProducto(f, qty);
                 setScanOpen(false);
                 return null;
               }
