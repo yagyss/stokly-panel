@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from "react";
-import { uploadProductImage } from "./lib/image.js";
+import { uploadProductImage, uploadLogoImage, borrarImagenPublica } from "./lib/image.js";
 import { supabase } from "./lib/supabase.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
@@ -16,6 +16,7 @@ import {
   expenseToRow,
   newId,
   useCategorias,
+  useNegocio,
 } from "./lib/data.js";
 
 const C = {
@@ -119,17 +120,27 @@ const parseCSV = (text) => {
       else { if (ch==='"'){ q=true; } else if (ch===delim){ out.push(cur); cur=""; } else { cur+=ch; } }
     } out.push(cur); return out; };
   const headers = splitLine(lines[0]).map(h=>h.replace(/"/g,"").trim().toLowerCase());
-  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
-  const findCol = k => { for (const v of (colMap[k]||[k])) { const i = headers.findIndex(h=>h.includes(v)); if (i!==-1) return i; } return -1; };
+  const colMap = { nombre:["nombre","name","producto"], sku:["sku","código","ref"], brand:["marca","brand"], color:["color"], size:["talla","size"], category:["categoría","categoria"], subcategory:["subcategoría","subcategoria"], stock:["stock","cantidad"], minStock:["stock mínimo","min stock","mínimo"], price:["precio venta","precio","price"], cost:["costo","cost"], image:["imagen","foto","image"], barcode:["codigo de barras","código de barras","barcode"] };
+  // "categoría" no debe caer en la columna "subcategoría" (ni "stock" en
+  // "stock mínimo", ni "sku" en "código de barras"): se ignoran esas columnas.
+  const findCol = k => {
+    const mala = k === "category" ? (h => h.includes("sub"))
+              : k === "stock"      ? (h => /m[ií]nimo|min stock/.test(h))
+              : k === "sku"        ? (h => h.includes("barras"))
+              : () => false;
+    for (const v of (colMap[k]||[k])) { const i = headers.findIndex(h=>h.includes(v) && !mala(h)); if (i!==-1) return i; } return -1;
+  };
   const cols = {}; for (const k of Object.keys(colMap)) cols[k] = findCol(k);
   return lines.slice(1).filter(l=>l.trim()).map((line,i) => {
     const vals = splitLine(line).map(v=>v.replace(/"/g,"").trim());
     const get = k => cols[k]!==-1 ? (vals[cols[k]]||"") : "";
     const name=get("nombre"),sku=get("sku"),stockRaw=get("stock");
-    // El SKU es opcional: si no está, Stokly le crea el código al importar
+    // OBLIGATORIOS: nombre y stock (sin ellos la fila no es un producto).
+    // categoría y subcategoría se validan en la vista previa y, si faltan,
+    // el producto queda en "Otros" (no se bloquea la importación).
     if (!name||!stockRaw) return null;
-    const category=get("category")||"Otro";
-    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"",barcode:get("barcode")||"" };
+    const category=get("category");
+    return { id:newId(),name,sku,brand:get("brand")||"",color:get("color")||"",size:get("size")||"",category,subcategory:get("subcategory")||"",stock:parseInt(stockRaw)||0,minStock:parseInt(get("minStock"))||5,price:parseFloat(get("price").replace(/[^0-9.]/g,""))||0,cost:parseFloat(get("cost").replace(/[^0-9.]/g,""))||0,sold:0,emoji:catEmoji[category]||"📦",image:get("image")||"",barcode:get("barcode")||"" };
   }).filter(Boolean);
 };
 
@@ -624,6 +635,7 @@ function PublicCatalog() {
   const ws = qs.get("ws") || "";
   const waTienda = (qs.get("wa") || "").replace(/\D/g, ""); // WhatsApp de la tienda (a quién llega el pedido)
   const [items, setItems] = useState(undefined); // undefined = cargando
+  const [negocio, setNegocio] = useState({ name:"", logo_url:"" }); // nombre y logo de la tienda
   const [talla, setTalla] = useState(qs.get("talla") || "");
   const [q, setQ] = useState("");
   const [foto, setFoto] = useState(null);        // { imgs:[], i }
@@ -648,6 +660,11 @@ function PublicCatalog() {
         if (!vivo) return;
         if (error) { console.error("[stokly] catálogo:", error.message); setItems([]); }
         else setItems(data || []);
+      });
+    // Nombre y logo de la tienda (solo esos dos datos son públicos)
+    supabase.rpc("negocio_publico", { ws })
+      .then(({ data }) => {
+        if (vivo && Array.isArray(data) && data[0]) setNegocio({ name: data[0].name || "", logo_url: data[0].logo_url || "" });
       });
     return () => { vivo = false; };
   }, [ws]);
@@ -724,10 +741,15 @@ function PublicCatalog() {
 
       {/* Encabezado */}
       <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", padding:"26px 16px 22px", color:"white" }}>
-        <div style={{ maxWidth:980, margin:"0 auto" }}>
-          <div style={{ fontSize:13, fontWeight:800, opacity:.85 }}>stokly 📦</div>
-          <div style={{ fontSize:26, fontWeight:900, marginTop:2 }}>🛍️ Catálogo</div>
-          <div style={{ fontSize:13, fontWeight:600, opacity:.9, marginTop:4 }}>Elige tu talla y descubre cada prenda</div>
+        <div style={{ maxWidth:980, margin:"0 auto", display:"flex", alignItems:"center", gap:14 }}>
+          {!!negocio.logo_url && (
+            <img src={negocio.logo_url} alt="Logo de la tienda" style={{ width:52, height:52, borderRadius:16, objectFit:"cover", background:"white", border:"2px solid rgba(255,255,255,0.5)", flexShrink:0 }} />
+          )}
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:13, fontWeight:800, opacity:.85 }}>{negocio.name || "stokly 📦"}</div>
+            <div style={{ fontSize:26, fontWeight:900, marginTop:2 }}>🛍️ Catálogo</div>
+            <div style={{ fontSize:13, fontWeight:600, opacity:.9, marginTop:4 }}>Elige tu talla y descubre cada prenda</div>
+          </div>
         </div>
       </div>
 
@@ -1021,17 +1043,106 @@ const STYLES = `
   }
 `;
 
+// ── Modal "MI NEGOCIO": nombre (del negocio o personal) + logo ────────────────
+function NegocioModal({ negocio, workspaceId, onClose, onGuardar, showToast }) {
+  const [nombre, setNombre] = useState((negocio && negocio.name) || "");
+  const [logo, setLogo] = useState((negocio && negocio.logo_url) || "");
+  const [subiendo, setSubiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [err, setErr] = useState("");
+  const logoRef = useRef(null);
+
+  async function pickLogo(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    setErr(""); setSubiendo(true);
+    try {
+      const url = await uploadLogoImage(f, workspaceId);
+      const anterior = logo;
+      setLogo(url);
+      if (anterior && anterior !== url) borrarImagenPublica(anterior);
+    } catch (e2) {
+      console.error("[stokly] logo:", e2 && e2.message);
+      setErr("No se pudo subir el logo — revisa tu conexión e inténtalo otra vez.");
+    } finally { setSubiendo(false); }
+  }
+
+  async function guardar() {
+    if (subiendo) { setErr("⏳ Espera a que termine de subir el logo"); return; }
+    if (!nombre.trim()) { setErr("Escribe el nombre de tu negocio (o tu nombre)"); return; }
+    setGuardando(true); setErr("");
+    const r = await onGuardar({ name: nombre, logo_url: logo });
+    setGuardando(false);
+    if (!r.ok) { setErr(r.error || "No se pudo guardar"); return; }
+    showToast("✅ Negocio actualizado");
+    onClose();
+  }
+
+  const iniciales = (String(nombre).trim()[0] || "N").toUpperCase();
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:6 }}>🏪 Mi negocio</div>
+        <div style={{ fontSize:12.5, color:C.muted, fontWeight:600, marginBottom:18, lineHeight:1.55 }}>
+          El nombre puede ser el de tu negocio <b>o tu nombre personal</b>. Se muestra en tu panel y en el catálogo público.
+        </div>
+
+        {/* Logo del negocio */}
+        <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:18 }}>
+          {logo
+            ? <img src={logo} alt="Logo" style={{ width:76, height:76, borderRadius:20, objectFit:"cover", background:C.bg, border:"1.5px solid "+C.border }} />
+            : <div style={{ width:76, height:76, borderRadius:20, background:"linear-gradient(135deg,#00C896,#4A90FF)", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:900, fontSize:30, flexShrink:0 }}>{iniciales}</div>}
+          <div style={{ flex:1, minWidth:0 }}>
+            <input ref={logoRef} type="file" accept="image/*" style={{ display:"none" }} onChange={pickLogo} />
+            <button className="filter-btn" onClick={() => logoRef.current && logoRef.current.click()} disabled={subiendo} style={{ width:"100%", marginBottom:6, opacity:subiendo?0.7:1 }}>
+              {subiendo ? "⏳ Subiendo logo…" : (logo ? "🖼️ Cambiar logo" : "🖼️ Subir logo (opcional)")}
+            </button>
+            {logo && (
+              <button className="filter-btn" onClick={() => { borrarImagenPublica(logo); setLogo(""); }} style={{ width:"100%" }}>
+                ✕ Quitar logo
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>Nombre del negocio o tu nombre *</div>
+        <input className="stk-input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Mi Negocio / María Pérez" maxLength={60} />
+        <div style={{ fontSize:11.5, color:C.muted, fontWeight:600, marginTop:8, lineHeight:1.5 }}>
+          💡 Este es el nombre que aparece en tu panel y en el link del catálogo.
+        </div>
+
+        {err && <div style={{ background:C.redLight, borderRadius:12, padding:11, marginTop:14, fontSize:13, fontWeight:700, color:C.red, lineHeight:1.5 }}>{err}</div>}
+
+        <div style={{ display:"flex", gap:10, marginTop:18 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
+          <button className="btn-main" onClick={guardar} disabled={guardando || subiendo} style={{ flex:2, opacity:(guardando||subiendo)?0.7:1 }}>
+            {guardando ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar (desktop) ─────────────────────────────────────────────────────────
-function Sidebar({ tab, setTab, lowStock, signOut }) {
+function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
   return (
     <aside className="sidebar">
       {/* Logo */}
       <div style={{ padding: "28px 24px 20px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-          <div style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:18 }}>S</div>
+          {negocio && negocio.logo_url
+            ? <img src={negocio.logo_url} alt="Logo del negocio" style={{ width:36, height:36, borderRadius:12, objectFit:"cover", background:"white", border:"1.5px solid rgba(255,255,255,0.25)" }} />
+            : <div style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:18 }}>S</div>}
           <span style={{ fontFamily:"'Space Grotesk',sans-serif", fontWeight:700, fontSize:22, background:"linear-gradient(135deg,#00C896,#60A5FA)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>stokly</span>
         </div>
-        <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", fontWeight:600 }}>Panel de gestión</div>
+        <button onClick={onNegocio} title="Nombre y logo de tu negocio" style={{ background:"none", border:"none", padding:0, margin:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"block" }}>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.8)", fontWeight:800, lineHeight:1.3 }}>{(negocio && negocio.name) || "Panel de gestión"}</div>
+          <div style={{ fontSize:10.5, color:"rgba(255,255,255,0.4)", fontWeight:700 }}>🏪 Editar nombre y logo</div>
+        </button>
       </div>
 
       {/* Nav items */}
@@ -1113,6 +1224,10 @@ export default function Stokly() {
   const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow,     onError: (m) => showToast(m) }, user?.id, workspaceId);
   const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow,  onError: (m) => showToast(m) }, user?.id, workspaceId);
 
+  // 🏪 Nombre y logo del negocio del panel activo
+  const nombreSugerido = user?.user_metadata?.display_name || user?.user_metadata?.full_name || "";
+  const { negocio, guardar: guardarNegocio } = useNegocio(workspaceId, nombreSugerido);
+
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 3000); }
 
   // 🚫 Sin datos de ejemplo: el panel empieza vacío y solo muestra lo que TÚ agregas.
@@ -1173,7 +1288,7 @@ export default function Stokly() {
       <style>{STYLES}</style>
 
       {/* Desktop sidebar */}
-      <Sidebar tab={tab} setTab={setTab} lowStock={lowStock} signOut={signOut} />
+      <Sidebar tab={tab} setTab={setTab} lowStock={lowStock} signOut={signOut} negocio={negocio} onNegocio={() => setModal("negocio")} />
 
       {/* Main */}
       <div className="main-wrap">
@@ -1181,7 +1296,7 @@ export default function Stokly() {
         <div className="topbar">
           <div>
             <div style={{ fontWeight:900, fontSize:isMobile?18:22, color:C.text }}>{isMobile ? "stokly 📦" : `${currentTab?.emoji} ${currentTab?.label}`}</div>
-            <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{isMobile ? "Tu negocio bajo control" : currentTab?.desc}</div>
+            <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{isMobile ? ((negocio && negocio.name) || "Tu negocio bajo control") : currentTab?.desc}</div>
           </div>
           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
             {lowStock.length>0 && isMobile && (
@@ -1214,7 +1329,9 @@ export default function Stokly() {
                 aria-label="Menú de usuario"
                 style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15, border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, boxShadow:userMenu ? "0 0 0 3px rgba(0,200,150,.35)" : "none" }}
               >
-                {(user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}
+                {negocio && negocio.logo_url
+                  ? <img src={negocio.logo_url} alt="Logo del negocio" style={{ width:36, height:36, borderRadius:12, objectFit:"cover", background:"white" }} />
+                  : (user.user_metadata?.display_name || user.email || "U")[0].toUpperCase()}
               </button>
               {userMenu && (
                 <>
@@ -1224,6 +1341,13 @@ export default function Stokly() {
                       {user.user_metadata?.display_name && <div style={{ fontWeight:900, fontSize:14, color:"#1A1A2E" }}>{user.user_metadata.display_name}</div>}
                       <div style={{ fontSize:12, color:"#8B8FA8", fontWeight:700, wordBreak:"break-all", lineHeight:1.35 }}>{user.email}</div>
                     </div>
+                    <button
+                      onClick={() => { setUserMenu(false); setModal("negocio"); }}
+                      title="Nombre y logo de tu negocio"
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                    >
+                      🏪 Mi negocio
+                    </button>
                     <button
                       onClick={() => { setUserMenu(false); setModal("team"); }}
                       title="Invitar a tu equipo"
@@ -1326,6 +1450,7 @@ export default function Stokly() {
       }} />}
       {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(s,pid,qty) => { setSales(prev=>[...prev,s]); setProducts(prev=>prev.map(p=>String(p.id)===String(pid)?{...p,stock:p.stock-qty,sold:p.sold+qty}:p)); setModal(null); showToast("💰 Venta: "+fmt(s.total)); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
+      {modal==="negocio" && <NegocioModal negocio={negocio} workspaceId={workspaceId} onClose={() => setModal(null)} onGuardar={guardarNegocio} showToast={showToast} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -3014,8 +3139,45 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
   const [subiendo,setSubiendo]=useState("");  // "📷 Subiendo fotos… 2/5"
   const fileRef=useRef();
   const fotosRef=useRef();
-  const PLANTILLA_HEADERS = ["nombre","sku","marca","color","talla","categoria","stock","stock mínimo","precio venta","costo","imagen (foto o enlace)"];
-  const PLANTILLA_EJEMPLO = ["Camiseta Básica","CAM-001","Nike","Blanco","M","Ropa","10","5","199.99","80.50","camiseta.jpg"];
+  // 📄 Plantilla: mismo orden que el formulario de "Nuevo producto".
+  // OBLIGATORIOS = nombre, categoría, subcategoría y stock · el resto es opcional.
+  const PLANTILLA_HEADERS = [
+    "nombre (obligatorio)",
+    "categoría (obligatorio)",
+    "subcategoría (obligatorio)",
+    "stock (obligatorio)",
+    "sku (opcional)",
+    "código de barras (opcional)",
+    "marca (opcional)",
+    "color (opcional)",
+    "talla (opcional)",
+    "stock mínimo (opcional)",
+    "precio venta (opcional)",
+    "costo (opcional)",
+    "imagen (foto o enlace) (opcional)",
+  ];
+  const PLANTILLA_EJEMPLO = ["Camiseta Básica","Ropa","Camisetas","10","CAM-001","7501234567890","Nike","Blanco","M","5","199.99","80.50","camiseta.jpg"];
+  // Hoja "Instrucciones" del Excel: qué es obligatorio y qué va en cada columna
+  const PLANTILLA_INFO = [
+    ["COLUMNA","OBLIGATORIA","QUÉ PONER AHÍ"],
+    ["nombre","✅ SÍ","Como se ve en la tienda: Camiseta Básica"],
+    ["categoría","✅ SÍ","Ropa, Calzado, Bolsos y Carteras, Accesorios, Joyería y Bisutería, Belleza y Cuidado Personal u Otros. Si no existe en tu panel, Stokly la crea al importar."],
+    ["subcategoría","✅ SÍ","Depende de la categoría (Camisetas, Tenis, Carteras…). Stokly la crea si todavía no existe."],
+    ["stock","✅ SÍ","Unidades disponibles, número entero (ej: 10)."],
+    ["sku","No (opcional)","Tu código interno. Si lo dejas vacío, Stokly le crea uno a cada producto y con él sale su etiqueta."],
+    ["código de barras","No (opcional)","Ej: 7501234567890 (lo que trae la etiqueta del proveedor)."],
+    ["marca","No (opcional)","Ej: Nike"],
+    ["color","No (opcional)","Ej: Blanco"],
+    ["talla","No (opcional)","Ej: M o 42"],
+    ["stock mínimo","No (opcional)","Avisa con 🟠/🟡 cuando el stock baje de este número. Si lo dejas vacío vale 5."],
+    ["precio venta","No (opcional)","Usa punto para decimales: 199.99"],
+    ["costo","No (opcional)","Lo que te costó: 80.50 (si falta se toma 0)."],
+    ["imagen (foto o enlace)","No (opcional)","Escribe el nombre de la foto (camiseta.jpg) y adjúntala al importar, o pega un enlace https://… Varias fotos: sepáralas con ||"],
+    ["","",""],
+    ["RECUERDA","",'Borra la fila de ejemplo antes de importar. Archivo .xlsx o CSV; en Google Sheets sube el CSV y compártelo como "Cualquier persona con el enlace" (Lector).'],
+  ];
+  // 📂 Categorías y subcategorías del panel (para asignarlas a lo importado)
+  const cats = useCategorias(workspaceId);
 
   // Carga la librería XLSX solo si hace falta (compartida con "Descargar inventario")
   function cargarXLSX(msgCarga, msgFallo, cb) {
@@ -3030,9 +3192,12 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       () => {
         try {
           const ws = XLSX.utils.aoa_to_sheet([PLANTILLA_HEADERS, PLANTILLA_EJEMPLO]);
-          ws["!cols"] = PLANTILLA_HEADERS.map((h, i) => ({ wch: Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 2 }));
+          ws["!cols"] = PLANTILLA_HEADERS.map((h, i) => ({ wch: Math.min(46, Math.max(String(h).length, String(PLANTILLA_EJEMPLO[i] || "").length) + 2) }));
+          const info = XLSX.utils.aoa_to_sheet(PLANTILLA_INFO);
+          info["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 96 }];
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+          XLSX.utils.book_append_sheet(wb, info, "Instrucciones");
           XLSX.writeFile(wb, "plantilla-inventario-stokly.xlsx");
         } catch (e) { setError("No se pudo generar la plantilla: " + e.message); }
       }
@@ -3086,7 +3251,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       if(t.startsWith("<!DOCTYPE")||t.startsWith("<html"))
         throw new Error("Google devolvió una página, no datos. Comparte la hoja: Compartir → Cualquier persona con el enlace → Lector.");
       const p=parseCSV(text);
-      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Usa encabezados: nombre, stock, precio... (el sku es opcional)"); return; }
+      if(!p.length){ setError("La hoja se abrió pero no tiene productos. Revisa los encabezados: obligatorios nombre, categoría, subcategoría y stock."); return; }
       setParsed(p); setStep("preview");
     }catch(err){ setError(err.message||"No se pudo conectar con Google Sheets."); }
     finally{ setLoadingSheet(false); }
@@ -3128,18 +3293,66 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
       });
       return { ...p, image: ok.join("||") };
     });
-    setSubiendo("");
     let aviso = "";
     const rotasN = Object.keys(rotas).length;
     if (fallos) aviso += `${fallos} foto(s) no se pudieron subir`;
     if (sinFoto) aviso += (aviso ? " · " : "") + `${sinFoto} sin foto (falta adjuntarla)`;
     if (rotasN) aviso += (aviso ? " · " : "") + `${rotasN} enlace(s) de imagen no cargan`;
-    onImport(finalP, mode, aviso);
+    // 🏷️ Categoría y subcategoría: se asignan a cada producto importado y se
+    // crean en el panel las que todavía no existan (igual que en "Nuevo producto").
+    setSubiendo("🏷️ Asignando categorías…");
+    const conCat = await asignarCategorias(finalP);
+    setSubiendo("");
+    onImport(conCat, mode, aviso);
+  }
+
+  // Devuelve la lista con categoryId/subcategoryId resueltos por nombre.
+  // Si las categorías no cargaron (sin conexión) devuelve todo igual: nunca se
+  // bloquea la importación por este paso.
+  async function asignarCategorias(lista) {
+    const nk = s => String(s || "").trim().toLowerCase();
+    const base = lista.map(p => {
+      const c = String(p.category || "").trim() || "Otros";
+      return { ...p, category: c, subcategory: String(p.subcategory || "").trim(), emoji: catEmoji[c] || p.emoji || "📦" };
+    });
+    if (!workspaceId) return base;
+    for (let i = 0; i < 50 && cats.cargando; i++) await new Promise(r => setTimeout(r, 100));
+    if (cats.error) return base;
+
+    const catPor = new Map(cats.categorias.map(c => [nk(c.name), c]));
+    const subPor = new Map(cats.subcategorias.map(s => [`${s.category_id}|${nk(s.name)}`, s]));
+    const salida = [];
+    for (const p of base) {
+      let cat = catPor.get(nk(p.category)) || null;
+      if (!cat) {
+        const r = await cats.crearCategoria(p.category);
+        if (r && r.ok) { cat = { id: r.id, name: p.category }; catPor.set(nk(p.category), cat); }
+      }
+      let sub = null;
+      if (cat && p.subcategory) {
+        sub = subPor.get(`${cat.id}|${nk(p.subcategory)}`) || null;
+        if (!sub) {
+          const r = await cats.crearSubcategoria(cat.id, p.subcategory);
+          if (r && r.ok) { sub = { id: r.id, category_id: cat.id, name: p.subcategory }; subPor.set(`${cat.id}|${nk(p.subcategory)}`, sub); }
+        }
+      }
+      salida.push({
+        ...p,
+        category: cat ? cat.name : p.category,
+        categoryId: cat ? cat.id : "",
+        subcategory: sub ? sub.name : p.subcategory,
+        subcategoryId: sub ? sub.id : "",
+      });
+    }
+    return salida;
   }
 
   const conFoto = parsed.filter(p => imgsDe(p.image).length > 0).length;
   // Filas sin SKU/código → Stokly les crea uno solo y con él sale su etiqueta
   const sinCod = parsed.filter(p => !codLimpio(p.sku)).length;
+  // Filas que no traen los obligatorios de categoría/subcategoría (no bloquean,
+  // pero conviene avisar antes de importar)
+  const sinCat = parsed.filter(p => !String(p.category||"").trim() || !String(p.subcategory||"").trim()).length;
   const pendAdj = parsed.filter(p =>
     imgsDe(p.image).some(v => v && !normalizarFotoURL(v) && !fotos[v.split(/[\\/]/).pop().toLowerCase()])
   ).length;
@@ -3167,8 +3380,8 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
           {/* Plantilla oficial descargable */}
           <div style={{ background:C.blueLight, borderRadius:14, padding:14, marginBottom:16 }}>
             <div style={{ fontSize:13, fontWeight:700, lineHeight:1.6, marginBottom:10, color:C.text }}>
-              📄 <b>Plantilla oficial</b> — todos los campos, <b>un producto de ejemplo</b> y columna <b>imagen</b>.<br/>
-              <span style={{ color:C.muted, fontWeight:600 }}>Borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · <b style={{ color:C.text }}>la columna sku es opcional</b>: si la dejas vacía, Stokly le crea el código a cada producto para su etiqueta · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
+              📄 <b>Plantilla oficial</b> — <b>4 columnas obligatorias</b> (nombre, categoría, subcategoría y stock) y todo lo demás <b>opcional</b>, con un producto de ejemplo.<br/>
+              <span style={{ color:C.muted, fontWeight:600 }}>En el Excel hay una hoja <b>Instrucciones</b> con qué va en cada columna · borra la fila de ejemplo antes de importar · usa punto para decimales (199.99) · <b style={{ color:C.text }}>sku, código de barras e imagen son opcionales</b>: si dejas el sku vacío, Stokly le crea el código a cada producto para su etiqueta · en "imagen" escribe el nombre de la foto (camiseta.jpg) y adjúntala en el paso siguiente — o pega un enlace público (https://…) · para VARIAS fotos del mismo producto separa los enlaces con ||</span>
             </div>
             <button className="btn-main" onClick={descargarExcel} style={{ width:"100%", marginBottom:8 }}>📥 Descargar plantilla para Excel (.xlsx)</button>
             <button className="btn-outline" onClick={descargarCSV} style={{ width:"100%", fontWeight:900 }}>📄 Descargar plantilla CSV (para Google Sheets)</button>
@@ -3193,9 +3406,10 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               </button>
               <div style={{ fontSize:12,color:C.muted,fontWeight:600,marginTop:12,lineHeight:1.6 }}>
                 <b>Cómo prepararla:</b> en Google Sheets → <b>Compartir</b> → <i>Cualquier persona con el enlace</i> → <b>Lector</b>.<br/>
-                Encabezados necesarios: <b>nombre, stock</b> (opcionales: <b>sku o código</b>, marca, color, talla, categoría, precio, costo, mínimo, <b>imagen</b>).<br/>
+                <b style={{ color:C.text }}>Obligatorio:</b> nombre, categoría, subcategoría y stock.<br/>
+                <b style={{ color:C.text }}>Opcional:</b> sku, código de barras, marca, color, talla, stock mínimo, precio, costo e imagen.<br/>
+                💡 Toma la <b>plantilla</b> de arriba (CSV), súbela a Google Sheets y llénala.<br/>
                 💡 Si dejas el <b>sku</b> vacío, Stokly le crea el código a cada producto para imprimir su etiqueta.
-                💡 Toma la <b>plantilla</b> de arriba, súbela a Google Sheets y llénala.
               </div>
             </div>
           )}
@@ -3205,7 +3419,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
         </>}
         {step==="preview"&&<>
           <div style={{ fontWeight:900,fontSize:20,marginBottom:4 }}>✅ Vista previa</div>
-          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
+          <div style={{ fontSize:13,color:C.muted,fontWeight:600,marginBottom:16 }}>{fileName} · {parsed.length} productos · 📷 {conFoto} con foto{sinCod?` · 🏷️ ${sinCod} sin código (Stokly lo crea)`:""}{sinCat?` · ⚠️ ${sinCat} sin categoría/subcategoría`:""}{pendAdj?` · ⚠️ ${pendAdj} sin adjuntar`:""}</div>
           <div style={{ display:"flex",gap:10,marginBottom:16 }}>
             {[{id:"merge",label:"➕ Agregar",desc:"No duplica productos"},{id:"replace",label:"🔄 Reemplazar",desc:"Borra el actual"}].map(m=>(
               <button key={m.id} onClick={()=>setMode(m.id)} style={{ flex:1,background:mode===m.id?C.greenLight:C.bg,border:`2px solid ${mode===m.id?C.green:C.border}`,borderRadius:14,padding:12,cursor:"pointer",fontFamily:"inherit" }}>
@@ -3247,6 +3461,9 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800,fontSize:13 }}>{p.name}</div>
                   <div style={{ fontSize:11,color:C.muted }}>{p.brand} · {p.color} · T{p.size}{p.sku?` · ${p.sku}`:" · 🏷️ Stokly creará el código"}</div>
+                  <div style={{ fontSize:10.5,fontWeight:800,color:(!p.category||!p.subcategory)?C.orange:C.green }}>
+                    {p.category || "⚠️ Sin categoría"}{p.subcategory ? ` · ${p.subcategory}` : " · ⚠️ Sin subcategoría"}
+                  </div>
                   {rotas[i] && <div style={{ fontSize:10.5,color:C.red,fontWeight:800 }}>⚠️ El enlace no carga — adjunta la foto o corrige el enlace</div>}
                   {nombreFoto && !adjunta && !rotas[i] && <div style={{ fontSize:10.5,color:C.orange,fontWeight:800 }}>📎 Falta adjuntar "{nombreFoto}"</div>}
                   {adjunta && <div style={{ fontSize:10.5,color:C.green,fontWeight:800 }}>✅ Foto lista: {nombreFoto}</div>}

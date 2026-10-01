@@ -395,3 +395,67 @@ export function useCategorias(workspaceId) {
 
   return { categorias, subcategorias, cargando, error, crearCategoria, crearSubcategoria, recargar: cargar };
 }
+
+// ── Datos del NEGOCIO del panel: nombre + logo ────────────────────────────────
+// Cada panel (negocio) guarda lo suyo: el nombre puede ser el del negocio o el
+// de la persona, y el logo se ve en el panel y en el catálogo público.
+// Los miembros del panel ven lo mismo (RLS: is_member).
+export function useNegocio(workspaceId, nombreSugerido) {
+  const [negocio, setNegocio] = useState({ name: "", logo_url: "" });
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+  const intentoRef = useRef(""); // panel al que ya le intentamos poner el nombre
+
+  const cargar = async () => {
+    if (!workspaceId) { setNegocio({ name: "", logo_url: "" }); return; }
+    setCargando(true);
+    setError("");
+    try {
+      const { data, error: err } = await supabase
+        .from("workspaces").select("name,logo_url").eq("id", workspaceId).maybeSingle();
+      if (err) throw err;
+      const fila = { name: (data && data.name) || "", logo_url: (data && data.logo_url) || "" };
+      setNegocio(fila);
+
+      // Primera visita con nombre dado de alta en el registro → lo usamos como
+      // nombre del negocio (aparece en el panel y en el catálogo).
+      const sugerido = String(nombreSugerido || "").trim();
+      if (sugerido && !fila.name.trim() && intentoRef.current !== workspaceId) {
+        intentoRef.current = workspaceId;
+        const { error: e2 } = await supabase
+          .from("workspaces").upsert({ id: workspaceId, name: sugerido });
+        if (e2) throw e2;
+        setNegocio({ ...fila, name: sugerido });
+      }
+    } catch (e) {
+      console.error("[stokly] negocio:", e.message || e);
+      setError("No se pudo cargar el nombre y el logo del panel — revisa tu conexión.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  useEffect(() => {
+    intentoRef.current = "";
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  // Guarda lo escrito en el modal "Mi negocio"
+  const guardar = async (campos) => {
+    if (!workspaceId) return { ok: false, error: "No hay panel activo" };
+    const nombre = String((campos && campos.name) || "").trim();
+    const logo = String((campos && campos.logo_url) || "").trim();
+    const { error: err } = await supabase
+      .from("workspaces")
+      .upsert({ id: workspaceId, name: nombre, logo_url: logo });
+    if (err) {
+      console.error("[stokly] negocio guardar:", err.message || err);
+      return { ok: false, error: "No se pudo guardar — revisa tu conexión" };
+    }
+    setNegocio({ name: nombre, logo_url: logo });
+    return { ok: true };
+  };
+
+  return { negocio, cargando, error, guardar, recargar: cargar };
+}

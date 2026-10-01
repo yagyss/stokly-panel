@@ -416,15 +416,18 @@ export default function AuthScreen() {
               <form onSubmit={submit} noValidate>
                 {mode === "signup" && (
                   <div className="field">
-                    <label className="lbl" htmlFor="au-name">Nombre</label>
+                    <label className="lbl" htmlFor="au-name">Tu nombre o el de tu negocio</label>
                     <div className="input-wrap">
                       <span className="ico"><IconUser /></span>
                       <input
                         id="au-name" className="in" value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Tu nombre" autoComplete="name"
+                        placeholder="Ej: Mi Negocio o María" autoComplete="name"
                       />
                     </div>
+                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "#8B8FA8", fontWeight: 600, lineHeight: 1.45 }}>
+                        Puede ser el nombre de tu negocio o tu nombre personal. Después lo cambias cuando quieras y ahí mismo subes su logo.
+                      </p>
                   </div>
                 )}
 
