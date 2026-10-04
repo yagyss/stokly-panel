@@ -211,18 +211,10 @@ const primeraImg = (v) => imgsDe(v)[0] || "";
 //    tocar la base de datos). Una venta vieja (sin "::") es un grupo de 1.
 const grupoVenta = (id) => { const s = String(id || ""); const i = s.indexOf("::"); return i > 0 ? s.slice(0, i) : s; };
 
-// 🧾 Historial: junta los renglones de UNA misma venta para mostrarla como una
-//    sola venta con varias referencias. Lo que es viejo (sin "::") va solo.
-function agruparVentas(ventas) {
-  const orden = [], map = {};
-  for (const s of ventas) {
-    const k = grupoVenta(s.id);
-    if (!map[k]) { map[k] = { k, items: [], total: 0 }; orden.push(map[k]); }
-    map[k].items.push(s);
-    map[k].total += s.total || 0;
-  }
-  return orden;
-}
+// 🧾 Historial: CADA renglón de venta se muestra en SU propio cuadro, con su
+//    propio botón de borrar (nada de juntarlas en una sola caja). grupoVenta()
+//    solo sirve para saber qué referencias vinieron juntas en la misma venta y
+//    mostrarlo como una píldoraita "🔗 N refs" en cada tarjeta.
 
 // 🏷️ SKU y código de barras son OPCIONALES: si el usuario no tiene esos datos,
 // Stokly le crea un código único. Es el que se imprime en la etiqueta (nombre,
@@ -2234,6 +2226,9 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
   const ventasR = sales.filter(s => enRango(s.date, rango));
   const totalR = ventasR.reduce((a,s)=>a+s.total,0);
   const byMethod = ventasR.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
+  // 🧾 Cuántas referencias formaron la venta de la que viene cada renglón
+  const porGrupo = {};
+  ventasR.forEach(s => { const k = grupoVenta(s.id); porGrupo[k] = (porGrupo[k] || 0) + 1; });
   const clearSales = () => {
     if (!window.confirm(`🗑️ ¿Vaciar ventas?\n\nSe eliminarán PERMANENTEMENTE las ${sales.length} ventas registradas.`)) return;
     if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todas las ventas?")) return;
@@ -2289,46 +2284,39 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
             <button onClick={clearSales} title="Borrar todas las ventas (permanente)" style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Vaciar ventas</button>
           )}
         </div>
-        {agruparVentas(ventasR).reverse().map(g=>{
-          const s0=g.items[0];
-          const p0=products.find(x=>String(x.id)===String(s0.productId));
-          const varias=g.items.length>1;
+        {/* 🧾 CADA venta/referencia en SU propio cuadro, con toda la info y su 🗑️ */}
+        {[...ventasR].reverse().map(s=>{
+          const p0=products.find(x=>String(x.id)===String(s.productId));
+          const nRef=porGrupo[grupoVenta(s.id)]||1;
+          const mismaVenta=String(s.id).includes("::")&&nRef>1;
+          const precioU=s.qty>0?Math.round((s.total||0)/s.qty):(s.total||0);
+          const[mColor,mBg]=colors[s.method]||[C.muted,C.bg];
+          const borrar=()=>{
+            const linea=`${p0?.name||"Producto"}${p0?` · ${p0.color||"–"}/${p0.size||"–"}`:""}`;
+            if(!window.confirm(`🗑️ ¿Eliminar esta referencia?\n\n${linea}\n${s.qty} ud${s.qty===1?"":"s"} · ${fmt(s.total)} · ${s.date}\n\nSe borrará PERMANENTEMENTE.`)) return;
+            setSales(prev=>prev.filter(x=>String(x.id)!==String(s.id)));
+            showToast("🗑️ Referencia eliminada");
+          };
           return (
-            <div key={g.k} className="row-item">
-              <div style={{ width:38,height:38, background:C.greenLight, borderRadius:12, display:"flex",alignItems:"center",justifyContent:"center",fontSize:20, flexShrink:0 }}>{p0?.emoji||"📦"}</div>
-              <div style={{ flex:1, minWidth:0 }}>
-                {varias ? (
-                  <>
-                    <div style={{ fontWeight:800, fontSize:14 }}>🛍️ Venta · {g.items.length} referencias</div>
-                    <div style={{ fontSize:11, color:C.muted, fontWeight:600, display:"flex", gap:6, alignItems:"center" }}>
-                      {s0.date} · {g.items.reduce((a,s)=>a+(s.qty||0),0)} uds · {s0.method}
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:2, marginTop:5 }}>
-                      {g.items.map(s=>{
-                        const p=products.find(x=>String(x.id)===String(s.productId));
-                        return (
-                          <div key={s.id} style={{ display:"flex", gap:8, fontSize:11.5, fontWeight:700, alignItems:"center" }}>
-                            <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p?.name||"Producto"}{p?` · ${p.color||"–"}/T${p.size||"–"}`:""}</span>
-                            <span style={{ color:C.muted, flexShrink:0 }}>×{s.qty}</span>
-                            <span style={{ flexShrink:0, minWidth:62, textAlign:"right" }}>{fmt(s.total)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontWeight:800, fontSize:14 }}>{p0?.name||"Producto"}</div>
-                    <div style={{ fontSize:11, color:C.muted, fontWeight:600, display:"flex", gap:6, alignItems:"center" }}>
-                      {p0&&<div className="color-dot" style={{ width:10,height:10,background:getColorCSS(p0.color) }} />}
-                      {s0.date} · {s0.qty} uds · {s0.method}
-                    </div>
-                  </>
-                )}
+            <div key={s.id} style={{ display:"flex", gap:12, alignItems:"flex-start", flexWrap:"wrap", background:C.white, border:"1.5px solid "+C.border, borderRadius:16, padding:isMobile?12:14, marginBottom:10 }}>
+              <div style={{ width:42,height:42, background:C.greenLight, borderRadius:13, display:"flex",alignItems:"center",justifyContent:"center",fontSize:21, flexShrink:0 }}>{p0?.emoji||"📦"}</div>
+              <div style={{ flex:"1 1 170px", minWidth:0 }}>
+                <div style={{ fontWeight:800, fontSize:isMobile?14:15 }}>{p0?.name||"Producto"}</div>
+                <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:4, display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                  {p0&&<span className="color-dot" style={{ width:10,height:10,background:getColorCSS(p0.color), flexShrink:0 }} />}
+                  <span>{p0?.color||"—"} · {p0?.size?`Talla ${p0.size}`:"Talla —"}</span>
+                  {p0?.sku&&<span>· SKU {p0.sku}</span>}
+                </div>
+                <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:4, display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                  <span>📅 {s.date}</span>
+                  <span>· {s.qty} ud{s.qty===1?"":"s"} × {fmt(precioU)}</span>
+                  <span className="pill" style={{ background:mBg, color:mColor, fontSize:10.5, padding:"3px 9px" }}>{s.method}</span>
+                  {mismaVenta&&<span className="pill" style={{ background:C.bg, color:C.muted, fontSize:10.5, padding:"3px 9px" }} title="Esta venta se registró junto con otras referencias">🔗 {nRef} refs</span>}
+                </div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-                <div style={{ fontWeight:900, fontSize:16, color:C.green }}>{fmt(g.total)}</div>
-                <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar la venta del ${s0.date} por ${fmt(g.total)}${varias?` (${g.items.length} referencias)`:""}?\n\nSe borrará PERMANENTEMENTE.`)) return; setSales(prev=>prev.filter(x=>grupoVenta(x.id)!==g.k)); showToast("🗑️ Venta eliminada"); }} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit" }}>🗑️</button>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
+                <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:C.green }}>{fmt(s.total)}</div>
+                <button title="Eliminar esta referencia (permanente)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
               </div>
             </div>
           );
