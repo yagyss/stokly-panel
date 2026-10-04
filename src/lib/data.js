@@ -160,6 +160,7 @@ export const saleFromRow = (r) => ({
   total: Number(r.total) || 0,
   date: typeof r.date === "string" ? r.date.slice(0, 10) : r.date,
   method: r.method || "Efectivo",
+  customerId: r.customer_id == null || r.customer_id === "" ? null : String(r.customer_id),
 });
 
 export const saleToRow = (s, uid, ws) => ({
@@ -171,6 +172,31 @@ export const saleToRow = (s, uid, ws) => ({
   total: +s.total || 0,
   date: s.date,
   method: s.method || "Efectivo",
+  customer_id: s.customerId ? String(s.customerId) : null,
+});
+
+// ══════════════════════════════════════════════════════════════
+//  CLIENTES (CRM) — fichas por panel
+// ══════════════════════════════════════════════════════════════
+export const customerFromRow = (r) => ({
+  id: String(r.id),
+  name: r.name || "",
+  city: r.city || "",
+  phone: r.phone || "",
+  email: r.email || "",
+  notes: r.notes || "",
+  createdAt: r.created_at || "",
+});
+
+export const customerToRow = (c, uid, ws) => ({
+  id: String(c.id),
+  user_id: uid,
+  workspace_id: ws,
+  name: c.name,
+  city: c.city || "",
+  phone: c.phone || "",
+  email: c.email || "",
+  notes: c.notes || "",
 });
 
 export const expenseFromRow = (r) => ({

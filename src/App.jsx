@@ -14,6 +14,8 @@ import {
   saleToRow,
   expenseFromRow,
   expenseToRow,
+  customerFromRow,
+  customerToRow,
   newId,
   useCategorias,
   useNegocio,
@@ -1160,6 +1162,158 @@ const STYLES = `
 `;
 
 // ── Modal "MI NEGOCIO": nombre (del negocio o personal) + logo ────────────────
+// ── 👥 CRM: ficha de cada cliente + TODO lo que ha comprado ──────────
+function CrmModal({ customers, setCustomers, sales, setSales, products, onClose, showToast, isMobile }) {
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState(null);       // cliente a crear/editar
+  const [abierto, setAbierto] = useState(null); // ficha con el historial abierto
+  const plano = s => String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const t = plano(q.trim());
+
+  // 📇 Resumen de cada cliente a partir de sus ventas ligadas
+  const fichas = (customers||[])
+    .filter(c => !t || plano([c.name,c.city,c.phone,c.email,c.notes].join(" ")).includes(t))
+    .map(c => {
+      const compras = (sales||[]).filter(s => String(s.customerId) === String(c.id));
+      const gastado = compras.reduce((a,s)=>a+(s.total||0),0);
+      const uds     = compras.reduce((a,s)=>a+(s.qty||0),0);
+      const fechas  = compras.map(s=>s.date).filter(Boolean).sort();
+      return { c, compras, gastado, uds, n:compras.length, ult:fechas[fechas.length-1]||"", primera:fechas[0]||"" };
+    })
+    .sort((a,b)=> (b.gastado - a.gastado) || String(a.c.name).localeCompare(String(b.c.name)));
+  const totalGastado = fichas.reduce((a,f)=>a+f.gastado,0);
+  const totalCompras = fichas.reduce((a,f)=>a+f.n,0);
+
+  const guardar = () => {
+    const n = String((form && form.name) || "").trim();
+    if (!n) { showToast("⚠️ El nombre del cliente es obligatorio"); return; }
+    const limpio = { name:n, city:String(form.city||"").trim(), phone:String(form.phone||"").trim(), email:String(form.email||"").trim(), notes:String(form.notes||"").trim() };
+    if (form.id) {
+      setCustomers(prev => prev.map(x => String(x.id)===String(form.id) ? { ...x, ...limpio } : x));
+      showToast("✅ Cliente actualizado");
+    } else {
+      setCustomers(prev => [...prev, { id:newId(), createdAt:hoyISO(), ...limpio }]);
+      showToast("✅ Cliente agregado");
+    }
+    setForm(null);
+  };
+
+  const borrar = (c) => {
+    if (!window.confirm(`🗑️ ¿Eliminar a "${c.name}"?\n\nSe borra su ficha; sus ventas quedan guardadas SIN cliente.\n\nSe borrará PERMANENTEMENTE.`)) return;
+    setCustomers(prev => prev.filter(x => String(x.id) !== String(c.id)));
+    setSales(prev => prev.map(s => String(s.customerId)===String(c.id) ? { ...s, customerId:null } : s));
+    setAbierto(null);
+    showToast("🗑️ Cliente eliminado");
+  };
+
+  const campo = (k, ph, extra) => (
+    <input className="stk-input" placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} {...extra} />
+  );
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
+          <div style={{ fontWeight:900, fontSize:isMobile?19:20 }}>👥 Clientes (CRM)</div>
+          <button className="btn-main" onClick={()=>setForm({ name:"", city:"", phone:"", email:"", notes:"" })} style={{ padding:"9px 14px", fontSize:13, whiteSpace:"nowrap" }}>+ Nuevo cliente</button>
+        </div>
+        <div style={{ fontSize:12.5, color:C.muted, fontWeight:700, marginBottom:14 }}>
+          {customers.length} cliente{customers.length===1?"":"s"} · {totalCompras} compra{totalCompras===1?"":"s"} · {fmt(totalGastado)} facturados
+        </div>
+
+        {/* ➕ Alta / ✏️ edición del cliente */}
+        {form && (
+          <div style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:18, padding:14, marginBottom:14, display:"flex", flexDirection:"column", gap:8 }}>
+            <div style={{ fontSize:11.5, fontWeight:900, color:C.muted, textTransform:"uppercase" }}>{form.id ? "✏️ Editar cliente" : "➕ Nuevo cliente"}</div>
+            {campo("name","Nombre * (obligatorio)")}
+            <div style={{ display:"flex", gap:8 }}>
+              {campo("city","📍 Ciudad")}
+              {campo("phone","📞 Celular",{ inputMode:"tel" })}
+            </div>
+            {campo("email","✉️ Correo (opcional)",{ inputMode:"email" })}
+            <textarea className="stk-input" placeholder="📝 Notas: tallas que usa, gustos, avisos…" rows={2} style={{ resize:"vertical" }} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
+            <div style={{ display:"flex", gap:8 }}>
+              <button className="btn-outline" onClick={()=>setForm(null)} style={{ flex:1 }}>Cancelar</button>
+              <button className="btn-main" onClick={guardar} style={{ flex:2 }}>Guardar</button>
+            </div>
+          </div>
+        )}
+
+        <input className="stk-input" placeholder="🔍 Buscar por nombre, ciudad o celular" value={q} onChange={e=>setQ(e.target.value)} style={{ marginBottom:12 }} />
+
+        {!fichas.length && (
+          <div style={{ textAlign:"center", padding:"26px 10px", color:C.muted, fontWeight:700, lineHeight:1.7, whiteSpace:"pre-line" }}>
+            {customers.length ? "Ningún cliente coincide con la búsqueda 🔍" : "Aún no tienes clientes 👥\nAgrégalos aquí o directo al registrar una venta."}
+          </div>
+        )}
+
+        {fichas.map(f => {
+          const abi = abierto === String(f.c.id);
+          const iniciales = String(f.c.name||"?").trim().charAt(0).toUpperCase() || "?";
+          return (
+            <div key={f.c.id} style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:18, padding:14, marginBottom:10 }}>
+              <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                <div style={{ width:44, height:44, borderRadius:14, background:C.blueLight, color:C.blue, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:17, flexShrink:0 }}>{iniciales}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:900, fontSize:15 }}>{f.c.name}</div>
+                  <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:3, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                    {f.c.city && <span>📍 {f.c.city}</span>}
+                    {f.c.phone && <span>📞 <a href={`tel:${f.c.phone}`} style={{ color:C.blue, textDecoration:"none", fontWeight:900 }}>{f.c.phone}</a></span>}
+                    {f.c.email && <span>✉️ {f.c.email}</span>}
+                  </div>
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
+                    <span className="pill" style={{ background:C.greenLight, color:C.green }}>{f.n} compra{f.n===1?"":"s"}</span>
+                    <span className="pill" style={{ background:C.yellowLight, color:C.yellow }}>{fmt(f.gastado)}</span>
+                    {f.ult && <span className="pill" style={{ background:C.bg, color:C.muted }}>Última: {f.ult}</span>}
+                    {f.primera && <span className="pill" style={{ background:C.bg, color:C.muted }}>1ª: {f.primera}</span>}
+                  </div>
+                </div>
+              </div>
+              {f.c.notes && <div style={{ fontSize:12, color:C.text, background:C.bg, borderRadius:12, padding:"8px 10px", marginTop:9, fontWeight:600, lineHeight:1.5 }}>📝 {f.c.notes}</div>}
+              <div style={{ display:"flex", gap:8, marginTop:10 }}>
+                <button className="filter-btn" onClick={()=>setAbierto(abi?null:String(f.c.id))} style={{ flex:1, borderColor:abi?C.blue:undefined, color:abi?C.blue:undefined }}>
+                  🧾 {abi ? "Ocultar compras" : (f.n ? `Ver sus ${f.n} compra${f.n===1?"":"s"}` : "Ver compras")}
+                </button>
+                <button className="filter-btn" title="Editar cliente" onClick={()=>setForm({ id:String(f.c.id), name:f.c.name, city:f.c.city, phone:f.c.phone, email:f.c.email, notes:f.c.notes })}>✏️</button>
+                <button className="filter-btn" title="Eliminar cliente" onClick={()=>borrar(f.c)} style={{ color:C.red }}>🗑️</button>
+              </div>
+              {abi && (
+                <div style={{ marginTop:10, borderTop:"1.5px dashed "+C.border, paddingTop:8 }}>
+                  {!f.compras.length && <div style={{ fontSize:12.5, color:C.muted, fontWeight:700, padding:"6px 0" }}>Todavía no ha comprado nada 🕓</div>}
+                  {[...f.compras].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(s=>{
+                    const p = products.find(x=>String(x.id)===String(s.productId));
+                    return (
+                      <div key={s.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid "+C.border+"60" }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p?.name||"Producto"}</div>
+                          <div style={{ fontSize:11, color:C.muted, fontWeight:700 }}>{s.date} · {p?`${p.color||"–"}/T${p.size||"–"}`:""} · {s.method}</div>
+                        </div>
+                        <div style={{ fontSize:12, fontWeight:800, color:C.muted, flexShrink:0 }}>×{s.qty}</div>
+                        <div style={{ fontWeight:900, fontSize:13.5, color:C.green, flexShrink:0, minWidth:72, textAlign:"right" }}>{fmt(s.total)}</div>
+                      </div>
+                    );
+                  })}
+                  {f.n>0 && (
+                    <div style={{ display:"flex", justifyContent:"space-between", paddingTop:9, fontWeight:900, fontSize:13 }}>
+                      <span style={{ color:C.muted }}>{f.n} compra{f.n===1?"":"s"} · {f.uds} uds</span>
+                      <span style={{ color:C.green }}>{fmt(f.gastado)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ marginTop:14 }}>
+          <button className="btn-outline" onClick={onClose} style={{ width:"100%" }}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NegocioModal({ negocio, workspaceId, onClose, onGuardar, showToast }) {
   const [nombre, setNombre] = useState((negocio && negocio.name) || "");
   const [logo, setLogo] = useState((negocio && negocio.logo_url) || "");
@@ -1339,6 +1493,8 @@ export default function Stokly() {
   const [products, setProducts, pStatus] = useSyncedTable("products", { fromRow: productFromRow, toRow: productToRow, onError: (m) => showToast(m) }, user?.id, workspaceId);
   const [sales, setSales]           = useSyncedTable("sales",     { fromRow: saleFromRow,     toRow: saleToRow,     onError: (m) => showToast(m) }, user?.id, workspaceId);
   const [expenses, setExpenses]     = useSyncedTable("expenses",  { fromRow: expenseFromRow,  toRow: expenseToRow,  onError: (m) => showToast(m) }, user?.id, workspaceId);
+  // 👥 CRM: fichas de clientes (nombre, ciudad, celular…) ligadas a sus ventas
+  const [customers, setCustomers]   = useSyncedTable("customers", { fromRow: customerFromRow, toRow: customerToRow, onError: (m) => showToast(m) }, user?.id, workspaceId);
 
   // 🏪 Nombre y logo del negocio del panel activo
   const nombreSugerido = user?.user_metadata?.display_name || user?.user_metadata?.full_name || "";
@@ -1465,6 +1621,13 @@ export default function Stokly() {
                       🏪 Mi negocio
                     </button>
                     <button
+                      onClick={() => { setUserMenu(false); setModal("crm"); }}
+                      title="Clientes: sus datos y todo lo que han comprado"
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.blue, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                    >
+                      👥 Clientes (CRM)
+                    </button>
+                    <button
                       onClick={() => { setUserMenu(false); setModal("team"); }}
                       title="Invitar a tu equipo"
                       style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.purple, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
@@ -1488,7 +1651,7 @@ export default function Stokly() {
         <div className="page-content">
           {tab==="home"      && <Home      products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
           {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} workspaceId={workspaceId} />}
-          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} />}
+          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} customers={customers} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
           {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
@@ -1570,9 +1733,10 @@ export default function Stokly() {
         setModal(null);
         showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${precioN?` · 💲 ${precioN} precio${precioN>1?"s":""} actualizado${precioN>1?"s":""}`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
       }} />}
-      {modal==="sale"    && <AddSaleModal   products={products} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); const porProd = {}; arr.forEach(s => { if (s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)]||0) + (s.qty||0); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; return q ? {...p, stock:p.stock-q, sold:p.sold+q} : p; })); setModal(null); showToast("💰 Venta: "+fmt(arr.reduce((a,s)=>a+(s.total||0),0))); }} />}
+      {modal==="sale"    && <AddSaleModal   products={products} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); const porProd = {}; arr.forEach(s => { if (s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)]||0) + (s.qty||0); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; return q ? {...p, stock:p.stock-q, sold:p.sold+q} : p; })); setModal(null); showToast("💰 Venta: "+fmt(arr.reduce((a,s)=>a+(s.total||0),0))); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {modal==="negocio" && <NegocioModal negocio={negocio} workspaceId={workspaceId} onClose={() => setModal(null)} onGuardar={guardarNegocio} showToast={showToast} />}
+      {modal==="crm"     && <CrmModal customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} onClose={() => setModal(null)} showToast={showToast} isMobile={isMobile} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -2221,7 +2385,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 }
 
 // ── SALES ─────────────────────────────────────────────────────────────────────
-function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, showToast }) {
+function Sales({ sales, setSales, products, customers, setProducts, totalSales, isMobile, showToast }) {
   const [rango, setRango] = useState({ id:"todo" });
   const ventasR = sales.filter(s => enRango(s.date, rango));
   const totalR = ventasR.reduce((a,s)=>a+s.total,0);
@@ -2287,6 +2451,7 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
         {/* 🧾 CADA venta/referencia en SU propio cuadro, con toda la info y su 🗑️ */}
         {[...ventasR].reverse().map(s=>{
           const p0=products.find(x=>String(x.id)===String(s.productId));
+          const cli=(customers||[]).find(c=>String(c.id)===String(s.customerId));
           const nRef=porGrupo[grupoVenta(s.id)]||1;
           const mismaVenta=String(s.id).includes("::")&&nRef>1;
           const precioU=s.qty>0?Math.round((s.total||0)/s.qty):(s.total||0);
@@ -2308,6 +2473,7 @@ function Sales({ sales, setSales, products, setProducts, totalSales, isMobile, s
                   {p0?.sku&&<span>· SKU {p0.sku}</span>}
                 </div>
                 <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:4, display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                  {cli&&<span className="pill" title={cli.phone?`📞 ${cli.phone}`:"Cliente"} style={{ background:C.blueLight, color:C.blue, fontSize:10.5, padding:"3px 9px" }}>👤 {cli.name}{cli.city?` · ${cli.city}`:""}</span>}
                   <span>📅 {s.date}</span>
                   <span>· {s.qty} ud{s.qty===1?"":"s"} × {fmt(precioU)}</span>
                   <span className="pill" style={{ background:mBg, color:mColor, fontSize:10.5, padding:"3px 9px" }}>{s.method}</span>
@@ -3189,9 +3355,12 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
   );
 }
 
-function AddSaleModal({ products, onClose, onSave }) {
+function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
   const [scanOpen,setScanOpen]=useState(false); const [err,setErr]=useState("");
+  // 👥 Cliente de esta venta: se elige uno existente o se agrega rápido aquí mismo
+  const [cli,setCli]=useState("");
+  const [nuevoCli,setNuevoCli]=useState(null);
   // 🛒 Varias referencias en UNA MISMA venta: se van agregando renglones aquí
   //    y al guardar se registran todos juntos (mismo día, mismo método).
   const [items,setItems]=useState([]);
@@ -3230,6 +3399,22 @@ function AddSaleModal({ products, onClose, onSave }) {
     const st = products.find(y => String(y.id) === String(x.pid))?.stock || 1;
     return { ...x, qty: Math.max(1, Math.min(st, x.qty + d)) };
   }));
+  // 👥 Clientes disponibles en el buscador + creación rápida (nombre, ciudad, celular)
+  const opcionesCli = [
+    // "Sin cliente" solo aparece cuando ya hay uno elegido (para poder quitarlo)
+    ...(cli ? [{ id:"", name:"👤 Sin cliente (venta anónima)", txt:"" }] : []),
+    ...(customers||[]).map(c => ({ id:String(c.id), name:`👤 ${c.name}${c.city?` · ${c.city}`:""}`, txt:[c.name,c.city,c.phone,c.email].join(" ") })),
+  ];
+  const cliElegido = (customers||[]).find(c => String(c.id) === String(cli));
+  const comprasCli = cli ? (sales||[]).filter(s => String(s.customerId) === String(cli)) : [];
+  const gastadoCli = comprasCli.reduce((a,s)=>a+(s.total||0),0);
+  const guardarCliente = () => {
+    const n = String((nuevoCli && nuevoCli.name) || "").trim();
+    if(!n){ setErr("⚠️ Escribe el nombre del cliente"); return; }
+    const c = { id:newId(), name:n, city:String(nuevoCli.city||"").trim(), phone:String(nuevoCli.phone||"").trim(), email:"", notes:"", createdAt:hoyISO() };
+    setCustomers(prev=>[...prev, c]);
+    setCli(c.id); setNuevoCli(null); setErr("");
+  };
   function save() {
     if(!renglones.length){ setErr("⚠️ Agrega al menos una referencia con el botón ➕"); return; }
     const mal = renglones.find(r => (r.pr.stock || 0) < r.qty);
@@ -3245,6 +3430,7 @@ function AddSaleModal({ products, onClose, onSave }) {
       total:r.pr.price*r.qty,
       date:hoyISO(),
       method,
+      customerId: cli || null,
     })));
   }
   return (
@@ -3253,6 +3439,42 @@ function AddSaleModal({ products, onClose, onSave }) {
         <div className="handle" />
         <div style={{ fontWeight:900,fontSize:20,marginBottom:20 }}>💰 Registrar venta</div>
         <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+          {/* 👥 Cliente de la venta: se elige uno existente o se agrega aquí mismo */}
+          <div>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>👤 Cliente (opcional)</div>
+            <div style={{ display:"flex", gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <SelectorBuscador
+                  titulo="Cliente"
+                  phBusqueda="🔍 Buscar por nombre, ciudad o celular"
+                  placeholder="👤 Elegir cliente ▼"
+                  opciones={opcionesCli}
+                  valor={cli}
+                  onElegir={id => { setCli(id); setErr(""); }}
+                  buscarEn={o => o.txt}
+                />
+              </div>
+              <button className="filter-btn" onClick={()=>setNuevoCli(nuevoCli?null:{name:"",city:"",phone:""})} title="Agregar un cliente nuevo" style={{ padding:"0 14px", flexShrink:0 }}>➕</button>
+            </div>
+            {cliElegido && (
+              <div style={{ marginTop:8, background:C.blueLight, borderRadius:14, padding:"10px 12px", fontSize:12.5, fontWeight:800, color:C.blue }}>
+                👤 {cliElegido.name}{cliElegido.city?` · ${cliElegido.city}`:""}{cliElegido.phone?` · 📞 ${cliElegido.phone}`:""}
+                <div style={{ color:C.muted, fontWeight:700, marginTop:3 }}>{comprasCli.length} compra{comprasCli.length===1?"":"s"} · {fmt(gastadoCli)} gastados</div>
+              </div>
+            )}
+            {nuevoCli && (
+              <div style={{ marginTop:8, background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:12, display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase" }}>Nuevo cliente</div>
+                <input className="stk-input" placeholder="Nombre * (obligatorio)" value={nuevoCli.name} onChange={e=>setNuevoCli(f=>({...f,name:e.target.value}))} />
+                <input className="stk-input" placeholder="Ciudad" value={nuevoCli.city} onChange={e=>setNuevoCli(f=>({...f,city:e.target.value}))} />
+                <input className="stk-input" placeholder="Celular / WhatsApp" inputMode="tel" value={nuevoCli.phone} onChange={e=>setNuevoCli(f=>({...f,phone:e.target.value}))} />
+                <div style={{ display:"flex", gap:8 }}>
+                  <button className="btn-outline" onClick={()=>setNuevoCli(null)} style={{ flex:1 }}>Cancelar</button>
+                  <button className="btn-main" onClick={guardarCliente} style={{ flex:2 }}>Guardar cliente</button>
+                </div>
+              </div>
+            )}
+          </div>
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Producto</div>
             <div style={{ display:"flex", gap:8 }}>
