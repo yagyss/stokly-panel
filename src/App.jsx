@@ -2552,8 +2552,34 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
 }
 
 // ── METRICS ───────────────────────────────────────────────────────────────────
+// 📂 Cabecera plegable de las secciones de Métricas: con un clic en el título
+//    se despliega o se encoge la lista, y siempre se ve cuántos artículos hay.
+function CabeceraPlegable({ titulo, total, etqTotal, limite, abierto, onToggle, extra }) {
+  const plegable = total > limite;
+  return (
+    <button type="button" onClick={plegable ? onToggle : undefined} aria-expanded={abierto}
+      style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, width:"100%", background:"none", border:"none", padding:plegable?"6px 0":0, marginBottom:plegable?6:12, cursor:plegable?"pointer":"default", fontFamily:"inherit", textAlign:"left" }}>
+      <span style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", minWidth:0 }}>
+        <span className="section-title" style={{ marginBottom:0 }}>{titulo}</span>
+        {typeof total === "number" && <span className="pill" style={{ background:C.bg, color:C.muted, fontSize:10.5, padding:"3px 10px" }}>{total} {etqTotal}</span>}
+        {extra}
+      </span>
+      {plegable && (
+        <span className="pill" style={{ background:abierto?C.greenLight:C.green, color:abierto?C.green:"#fff", flexShrink:0, fontSize:10.5, padding:"5px 11px" }}>
+          {abierto ? "▲ encoger" : "▼ desplegar"}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const [rango, setRango] = useState({ id:"todo" });
+  // 📂 Listas plegables: arrancan encogidas; un clic las despliega
+  const [verRanking, setVerRanking] = useState(false);
+  const [verTallas, setVerTallas]   = useState(false);
+  const [verComprar, setVerComprar] = useState(false);
+  const N_RANK = 5, N_TALLAS = 6, N_COMPRAR = 4;
   const sF = sales.filter(s => enRango(s.date, rango));
   const eF = expenses.filter(e => solapaRango(e, rango));
   const totalSR = sF.reduce((a,s) => a + s.total, 0);
@@ -2564,7 +2590,8 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   sF.forEach(s => { if (s.productId) porProducto[s.productId] = (porProducto[s.productId] || 0) + (s.qty || 0); });
   const vend = (p) => !p ? 0 : (rango.id === "todo" ? (p.sold || 0) : (porProducto[p.id] || 0));
   const topSold = [...products].sort((a,b)=>vend(b)-vend(a));
-  const ranking = rango.id === "todo" ? topSold : topSold.filter(p => vend(p) > 0);
+  // 🏆 Solo lo que SE HA VENDIDO (desaparecen las referencias con 0 unidades)
+  const ranking = topSold.filter(p => vend(p) > 0);
   const byBrand = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.brand])acc[p.brand]=0;acc[p.brand]+=v;return acc;},{});
   const byColor = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.color])acc[p.color]=0;acc[p.color]+=v;return acc;},{});
   // unidades vendidas por talla (según el rango elegido)
@@ -2573,7 +2600,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const bySize = Object.entries(sizeMap).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   const maxSize = bySize[0]?.[1] || 1;
   const totalSizeSold = bySize.reduce((a, [, v]) => a + v, 0);
-  const maxSold = topSold.length ? (vend(topSold[0]) || 1) : 1;
+  const maxSold = ranking.length ? (vend(ranking[0]) || 1) : 1;
   const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>vend(b)-vend(a));
   const margin = totalSR?pct(profitR,totalSR):0;
   return (
@@ -2583,20 +2610,20 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
         {[
           {label:"Margen neto",   value:`${margin}%`,                                    color:margin>30?C.green:C.orange, bg:margin>30?C.greenLight:C.orangeLight},
           {label:"Ticket prom.", value:fmt(sF.length?Math.round(totalSR/sF.length):0), color:C.blue,   bg:C.blueLight},
-          {label:"Más vendido",  value:topSold[0]?.name.split(" ")[0]||"—",              color:C.yellow, bg:C.yellowLight},
+          {label:"Más vendido",  value:ranking[0]?.name.split(" ")[0]||"—",              color:C.yellow, bg:C.yellowLight},
           {label:"Referencias",  value:products.length,                                  color:C.purple, bg:C.purpleLight},
         ].map(k=><div key={k.label} className="stat-card" style={{ background:k.bg }}><div style={{ fontSize:11,fontWeight:800,color:k.color,marginBottom:6,textTransform:"uppercase" }}>{k.label}</div><div style={{ fontSize:24,fontWeight:900,color:C.text }}>{k.value}</div></div>)}
       </div>
       <div className={isMobile?"":"desktop-2col"}>
         <div className="card" style={{ padding:20 }}>
-          <div className="section-title">🏆 Ranking de ventas</div>
+          <CabeceraPlegable titulo="🏆 Ranking de ventas" total={ranking.length} etqTotal="vendidas" limite={N_RANK} abierto={verRanking} onToggle={()=>setVerRanking(v=>!v)} />
           {ranking.length === 0 && (
             <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
               Sin ventas en este rango 📅<br />
               <span style={{ fontWeight:600 }}>Cambia el rango de tiempo para ver quién lidera.</span>
             </div>
           )}
-          {ranking.map((p,i)=>(
+          {ranking.slice(0, verRanking ? ranking.length : N_RANK).map((p,i)=>(
             <div key={p.id} style={{ marginBottom:14 }}>
               <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center" }}>
                 <div style={{ display:"flex",gap:8,alignItems:"center" }}>
@@ -2609,6 +2636,11 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
               <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((vend(p)/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
             </div>
           ))}
+          {ranking.length > N_RANK && (
+            <button onClick={()=>setVerRanking(v=>!v)} style={{ width:"100%", marginTop:2, background:C.bg, border:"none", borderRadius:12, padding:"10px", fontWeight:900, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}>
+              {verRanking ? "▲ Encoger la lista" : `▼ Desplegar las ${ranking.length} vendidas`}
+            </button>
+          )}
         </div>
         <div>
           <div className="card" style={{ padding:20, marginBottom:16 }}>
@@ -2630,17 +2662,15 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
             )}
           </div>
           <div className="card" style={{ padding:20, marginBottom:16 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div className="section-title" style={{ marginBottom:0 }}>📏 Tallas más vendidas</div>
-              {bySize.length > 0 && <span className="pill" style={{ background:C.tealLight, color:C.teal }}>{totalSizeSold} uds</span>}
-            </div>
+            <CabeceraPlegable titulo="📏 Tallas más vendidas" total={bySize.length} etqTotal="tallas" limite={N_TALLAS} abierto={verTallas} onToggle={()=>setVerTallas(v=>!v)}
+              extra={bySize.length > 0 ? <span className="pill" style={{ background:C.tealLight, color:C.teal }}>{totalSizeSold} uds</span> : null} />
             {bySize.length === 0 && (
               <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7, marginTop:6 }}>
                 Aún no hay ventas por talla.<br />
                 <span style={{ fontWeight:600 }}>Registra ventas y verás aquí qué tallas se van primero.</span>
               </div>
             )}
-            {bySize.map(([size, sold], i) => (
+            {bySize.slice(0, verTallas ? bySize.length : N_TALLAS).map(([size, sold], i) => (
               <div key={size} style={{ marginBottom:12, marginTop: i === 0 && bySize.length > 0 ? 14 : 0 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5, alignItems:"center" }}>
                   <div style={{ display:"flex", gap:8, alignItems:"center", minWidth:0 }}>
@@ -2656,11 +2686,16 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                 <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#4A90FF,#8B5CF6)" }} /></div>
               </div>
             ))}
+            {bySize.length > N_TALLAS && (
+              <button onClick={()=>setVerTallas(v=>!v)} style={{ width:"100%", marginTop:2, background:C.bg, border:"none", borderRadius:12, padding:"10px", fontWeight:900, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}>
+                {verTallas ? "▲ Encoger la lista" : `▼ Desplegar las ${bySize.length} tallas`}
+              </button>
+            )}
           </div>
           {toBuy.length>0 && (
             <div className="card" style={{ padding:20, border:"2px solid "+C.yellow+"50" }}>
-              <div className="section-title">🛒 Qué deberías comprar</div>
-              {toBuy.map(p=>{const qty=Math.max(p.minStock*3,10);return(
+              <CabeceraPlegable titulo="🛒 Qué deberías comprar" total={toBuy.length} etqTotal="productos" limite={N_COMPRAR} abierto={verComprar} onToggle={()=>setVerComprar(v=>!v)} />
+              {toBuy.slice(0, verComprar ? toBuy.length : N_COMPRAR).map(p=>{const qty=Math.max(p.minStock*3,10);return(
                 <div key={p.id} style={{ background:C.yellowLight,borderRadius:16,padding:"14px 16px",marginBottom:10 }}>
                   <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:8 }}>
                     <div className="color-dot" style={{ width:16,height:16,background:getColorCSS(p.color) }} />
@@ -2672,6 +2707,11 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </div>
                 </div>
               );})}
+              {toBuy.length > N_COMPRAR && (
+                <button onClick={()=>setVerComprar(v=>!v)} style={{ width:"100%", marginTop:2, background:"#fff", border:"none", borderRadius:12, padding:"10px", fontWeight:900, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}>
+                  {verComprar ? "▲ Encoger la lista" : `▼ Desplegar los ${toBuy.length} productos`}
+                </button>
+              )}
             </div>
           )}
         </div>
