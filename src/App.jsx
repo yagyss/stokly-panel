@@ -39,6 +39,8 @@ const TABS = [
   { id: "metrics",   label: "Métricas",   emoji: "📊", desc: "Análisis avanzado" },
 ];
 
+const TAB_CRM = { id: "crm", label: "Clientes (CRM)", emoji: "👥", desc: "Fichas y compras" };
+
 const COLOR_CSS = {
   blanco:"#F0F0F0", negro:"#1C1C1E", rojo:"#EF4444", azul:"#3B82F6", verde:"#10B981",
   amarillo:"#F59E0B", gris:"#9CA3AF", khaki:"#B5A642", naranja:"#F97316", morado:"#8B5CF6",
@@ -1163,7 +1165,7 @@ const STYLES = `
 
 // ── Modal "MI NEGOCIO": nombre (del negocio o personal) + logo ────────────────
 // ── 👥 CRM: ficha de cada cliente + TODO lo que ha comprado ──────────
-function CrmModal({ customers, setCustomers, sales, setSales, products, onClose, showToast, isMobile }) {
+function CrmModal({ customers, setCustomers, sales, setSales, products, onClose, showToast, isMobile, embebido }) {
   const [q, setQ] = useState("");
   const [form, setForm] = useState(null);       // cliente a crear/editar
   const [abierto, setAbierto] = useState(null); // ficha con el historial abierto
@@ -1210,10 +1212,9 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
     <input className="stk-input" placeholder={ph} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} {...extra} />
   );
 
-  return (
-    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="sheet">
-        <div className="handle" />
+  // 📦 El contenido es el MISMO en los dos modos: sección integrada o ventana.
+  const contenido = (
+    <div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
           <div style={{ fontWeight:900, fontSize:isMobile?19:20 }}>👥 Clientes (CRM)</div>
           <button className="btn-main" onClick={()=>setForm({ name:"", city:"", phone:"", email:"", notes:"" })} style={{ padding:"9px 14px", fontSize:13, whiteSpace:"nowrap" }}>+ Nuevo cliente</button>
@@ -1306,9 +1307,22 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
           );
         })}
 
-        <div style={{ marginTop:14 }}>
-          <button className="btn-outline" onClick={onClose} style={{ width:"100%" }}>Cerrar</button>
-        </div>
+        {!embebido && (
+          <div style={{ marginTop:14 }}>
+            <button className="btn-outline" onClick={onClose} style={{ width:"100%" }}>Cerrar</button>
+          </div>
+        )}
+    </div>
+  );
+
+  // 📱 MODO SECCIÓN de la plataforma (igual que Ventas o Métricas): sin ventana flotante
+  if (embebido) return <div className="card" style={{ padding: isMobile ? 16 : 20 }}>{contenido}</div>;
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        {contenido}
       </div>
     </div>
   );
@@ -1553,7 +1567,8 @@ export default function Stokly() {
   const totalSales = sales.reduce((a,s) => a+s.total, 0);
   const totalExpenses = expenses.reduce((a,e) => a+e.amount, 0);
   const profit = totalSales - totalExpenses;
-  const currentTab = TABS.find(t => t.id === tab);
+  // 📱 Clientes (CRM) entra como sección de la plataforma (no como ventana flotante)
+  const currentTab = TABS.find(t => t.id === tab) || (tab === "crm" ? TAB_CRM : null);
 
   return (
     <div className="app-root">
@@ -1621,7 +1636,7 @@ export default function Stokly() {
                       🏪 Mi negocio
                     </button>
                     <button
-                      onClick={() => { setUserMenu(false); setModal("crm"); }}
+                      onClick={() => { setUserMenu(false); setTab("crm"); }}
                       title="Clientes: sus datos y todo lo que han comprado"
                       style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.blue, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                     >
@@ -1655,6 +1670,8 @@ export default function Stokly() {
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
           {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
+          {/* 👥 Clientes: sección integrada (igual que Ventas / Métricas) */}
+          {tab==="crm"       && <CrmModal  customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} showToast={showToast} isMobile={isMobile} embebido />}
         </div>
       </div>
 
@@ -1736,7 +1753,6 @@ export default function Stokly() {
       {modal==="sale"    && <AddSaleModal   products={products} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); const porProd = {}; arr.forEach(s => { if (s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)]||0) + (s.qty||0); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; return q ? {...p, stock:p.stock-q, sold:p.sold+q} : p; })); setModal(null); showToast("💰 Venta: "+fmt(arr.reduce((a,s)=>a+(s.total||0),0))); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {modal==="negocio" && <NegocioModal negocio={negocio} workspaceId={workspaceId} onClose={() => setModal(null)} onGuardar={guardarNegocio} showToast={showToast} />}
-      {modal==="crm"     && <CrmModal customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} onClose={() => setModal(null)} showToast={showToast} isMobile={isMobile} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
