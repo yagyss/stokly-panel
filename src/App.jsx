@@ -1743,6 +1743,22 @@ export default function Stokly() {
   );
 }
 
+// ── 🔄 DEVOLUCIÓN ────────────────────────────────────────────────────────────
+// Cuando se BORRA una venta (devolución), el inventario se reajusta solo:
+// las unidades vuelven al stock y se baja el contador de "vendido" del producto.
+function aplicarDevolucion(setProducts, ventasBorradas) {
+  const porProd = {};
+  (ventasBorradas || []).forEach(s => {
+    if (s && s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)] || 0) + (s.qty || 0);
+  });
+  if (!Object.keys(porProd).length) return;
+  setProducts(prev => prev.map(p => {
+    const q = porProd[String(p.id)];
+    if (!q) return p;
+    return { ...p, stock: (p.stock || 0) + q, sold: Math.max(0, (p.sold || 0) - q) };
+  }));
+}
+
 // ── HOME ──────────────────────────────────────────────────────────────────────
 function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lowStock, setTab, setModal, isMobile }) {
   const [rango, setRango] = useState({ id:"todo" });
@@ -1753,7 +1769,8 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
   const profitR = totalSR - totalER;
   const unidadesR = {};
   sF.forEach(s => { unidadesR[s.productId] = (unidadesR[s.productId] || 0) + (s.qty || 0); });
-  const vendidos = (p) => rango.id === "todo" ? (p.sold || 0) : (unidadesR[p.id] || 0);
+  // 📌 Fuente de verdad = las ventas registradas (si borras una, baja al instante)
+  const vendidos = (p) => (unidadesR[p.id] || 0);
   const top5 = [...products].sort((a,b) => vendidos(b) - vendidos(a)).slice(0,5);
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
@@ -1777,7 +1794,7 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
         {[
           { label:"Unidades en stock", value:products.reduce((a,p)=>a+p.stock,0), color:C.blue,   bg:C.blueLight,   emoji:"📦" },
           { label:"Referencias",       value:products.length,                      color:C.purple, bg:C.purpleLight, emoji:"🏷️" },
-          { label: rango.id==="todo" ? "Ventas registradas" : "Vendidas en el rango", value: rango.id==="todo" ? products.reduce((a,p)=>a+p.sold,0) : sF.reduce((a,s)=>a+s.qty,0), color:C.green,  bg:C.greenLight,  emoji:"💰" },
+          { label: rango.id==="todo" ? "Unidades vendidas" : "Vendidas en el rango", value: sF.reduce((a,s)=>a+(s.qty||0),0), color:C.green,  bg:C.greenLight,  emoji:"💰" },
           { label:"Alertas de stock",  value:lowStock.length,                      color:lowStock.length?C.red:C.green, bg:lowStock.length?C.redLight:C.greenLight, emoji:"⚠️" },
         ].map(k=>(
           <div key={k.label} className="stat-card" style={{ background:k.bg }}>
@@ -2394,10 +2411,11 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
   const porGrupo = {};
   ventasR.forEach(s => { const k = grupoVenta(s.id); porGrupo[k] = (porGrupo[k] || 0) + 1; });
   const clearSales = () => {
-    if (!window.confirm(`🗑️ ¿Vaciar ventas?\n\nSe eliminarán PERMANENTEMENTE las ${sales.length} ventas registradas.`)) return;
+    if (!window.confirm(`🗑️ ¿Vaciar ventas?\n\nSe eliminarán PERMANENTEMENTE las ${sales.length} ventas registradas.\n\n✅ Todo el stock de esas ventas VUELVE al inventario.`)) return;
     if (!window.confirm("⚠️ Última confirmación: NO se puede deshacer.\n\n¿Borrar todas las ventas?")) return;
+    aplicarDevolucion(setProducts, sales);
     setSales([]);
-    showToast("🗑️ Ventas vaciadas");
+    showToast("🗑️ Ventas vaciadas · inventario devuelto");
   };
   // ⬇️ Descarga las ventas DEL RANGO elegido en Excel (.xlsx)
   function descargarVentas() {
@@ -2458,9 +2476,10 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
           const[mColor,mBg]=colors[s.method]||[C.muted,C.bg];
           const borrar=()=>{
             const linea=`${p0?.name||"Producto"}${p0?` · ${p0.color||"–"}/${p0.size||"–"}`:""}`;
-            if(!window.confirm(`🗑️ ¿Eliminar esta referencia?\n\n${linea}\n${s.qty} ud${s.qty===1?"":"s"} · ${fmt(s.total)} · ${s.date}\n\nSe borrará PERMANENTEMENTE.`)) return;
+            if(!window.confirm(`↩️ ¿Eliminar esta venta (devolución)?\n\n${linea}\n${s.qty} ud${s.qty===1?"":"s"} · ${fmt(s.total)} · ${s.date}\n\nSe borrará PERMANENTEMENTE.\n\n✅ Las ${s.qty} ud${s.qty===1?"":"s"} VUELVEN al inventario y las métricas se ajustan solas.`)) return;
             setSales(prev=>prev.filter(x=>String(x.id)!==String(s.id)));
-            showToast("🗑️ Referencia eliminada");
+            aplicarDevolucion(setProducts, [s]);
+            showToast(`↩️ Devolución: ${s.qty} ud${s.qty===1?"":"s"} de vuelta al inventario`);
           };
           return (
             <div key={s.id} style={{ display:"flex", gap:12, alignItems:"flex-start", flexWrap:"wrap", background:C.white, border:"1.5px solid "+C.border, borderRadius:16, padding:isMobile?12:14, marginBottom:10 }}>
@@ -2745,7 +2764,8 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const [verRanking, setVerRanking] = useState(false);
   const [verTallas, setVerTallas]   = useState(false);
   const [verComprar, setVerComprar] = useState(false);
-  const N_RANK = 5, N_TALLAS = 6, N_COMPRAR = 4;
+  const [verMarcas, setVerMarcas]   = useState(false);
+  const N_RANK = 5, N_TALLAS = 6, N_COMPRAR = 4, N_MARCA = 5;
   const sF = sales.filter(s => enRango(s.date, rango));
   const eF = expenses.filter(e => solapaRango(e, rango));
   const totalSR = sF.reduce((a,s) => a + s.total, 0);
@@ -2754,11 +2774,26 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   // unidades vendidas POR PRODUCTO dentro del rango elegido
   const porProducto = {};
   sF.forEach(s => { if (s.productId) porProducto[s.productId] = (porProducto[s.productId] || 0) + (s.qty || 0); });
-  const vend = (p) => !p ? 0 : (rango.id === "todo" ? (p.sold || 0) : (porProducto[p.id] || 0));
+  // 📌 Fuente de verdad = las VENTAS del rango (no el contador del producto).
+  //    Así, si borras una venta por devolución, todas las métricas bajan solas.
+  const vend = (p) => !p ? 0 : (porProducto[p.id] || 0);
   const topSold = [...products].sort((a,b)=>vend(b)-vend(a));
   // 🏆 Solo lo que SE HA VENDIDO (desaparecen las referencias con 0 unidades)
   const ranking = topSold.filter(p => vend(p) > 0);
-  const byBrand = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.brand])acc[p.brand]=0;acc[p.brand]+=v;return acc;},{});
+  // 🏷️ Marcas vendidas en el rango (unidades + dinero), calculado de las ventas
+  const marcaUn = {}, marcaTot = {};
+  sF.forEach(s => {
+    const p = products.find(x => String(x.id) === String(s.productId));
+    const b = (p && String(p.brand || "").trim()) || "Sin marca";
+    marcaUn[b] = (marcaUn[b] || 0) + (s.qty || 0);
+    marcaTot[b] = (marcaTot[b] || 0) + (s.total || 0);
+  });
+  const byBrand = Object.keys(marcaUn)
+    .map(b => ({ brand:b, uds:marcaUn[b], total:marcaTot[b] }))
+    .filter(x => x.uds > 0)
+    .sort((a,b) => b.uds - a.uds || b.total - a.total);
+  const totalMarcas = byBrand.reduce((a,m)=>a+m.uds,0);
+  const maxMarca = byBrand[0]?.uds || 1;
   const byColor = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.color])acc[p.color]=0;acc[p.color]+=v;return acc;},{});
   // unidades vendidas por talla (según el rango elegido)
   const sizeMap = {};
@@ -2781,8 +2816,10 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
         ].map(k=><div key={k.label} className="stat-card" style={{ background:k.bg }}><div style={{ fontSize:11,fontWeight:800,color:k.color,marginBottom:6,textTransform:"uppercase" }}>{k.label}</div><div style={{ fontSize:24,fontWeight:900,color:C.text }}>{k.value}</div></div>)}
       </div>
       <div className={isMobile?"":"desktop-2col"}>
-        <div className="card" style={{ padding:20 }}>
-          <CabeceraPlegable titulo="🏆 Ranking de ventas" total={ranking.length} etqTotal="vendidas" limite={N_RANK} abierto={verRanking} onToggle={()=>setVerRanking(v=>!v)} />
+        <div>
+        <div className="card" style={{ padding:20, marginBottom:16 }}>
+          <CabeceraPlegable titulo="🏆 Ranking de ventas" total={ranking.length} etqTotal="vendidas" limite={N_RANK} abierto={verRanking} onToggle={()=>setVerRanking(v=>!v)}
+            extra={byBrand.length>0 ? <span className="pill" title={`Marca más vendida en ${rango.id==="todo"?"todo":"este rango"}`} style={{ background:C.purpleLight, color:C.purple, fontSize:10.5, padding:"3px 10px" }}>🏷️ {byBrand[0].brand} · {byBrand[0].uds} uds</span> : null} />
           {ranking.length === 0 && (
             <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
               Sin ventas en este rango 📅<br />
@@ -2807,6 +2844,39 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
               {verRanking ? "▲ Encoger la lista" : `▼ Desplegar las ${ranking.length} vendidas`}
             </button>
           )}
+        </div>
+        {/* 🏷️ MARCAS más vendidas (sale de las ventas, se borra con la devolución) */}
+        <div className="card" style={{ padding:20, border:"2px solid "+C.purple+"40" }}>
+          <CabeceraPlegable titulo="🏷️ Marcas más vendidas" total={byBrand.length} etqTotal="marcas" limite={N_MARCA} abierto={verMarcas} onToggle={()=>setVerMarcas(v=>!v)}
+            extra={byBrand.length>0 ? <span className="pill" style={{ background:C.purpleLight, color:C.purple, fontSize:10.5, padding:"3px 10px" }}>{totalMarcas} uds</span> : null} />
+          {byBrand.length === 0 && (
+            <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
+              Sin ventas en este rango 📅<br />
+              <span style={{ fontWeight:600 }}>Registra ventas y verás aquí qué marca lidera.</span>
+            </div>
+          )}
+          {byBrand.slice(0, verMarcas ? byBrand.length : N_MARCA).map((m,i)=>(
+            <div key={m.brand} style={{ marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5, alignItems:"center", gap:8 }}>
+                <div style={{ display:"flex", gap:8, alignItems:"center", minWidth:0 }}>
+                  <span style={{ fontSize:13, fontWeight:900, color:i===0?C.yellow:C.muted, minWidth:20 }}>#{i+1}</span>
+                  <span style={{ fontWeight:800, fontSize:13.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.brand}</span>
+                  {i===0 && <span className="pill" style={{ background:C.yellowLight, color:C.yellow, fontSize:10, padding:"3px 9px", flexShrink:0 }}>🏆 La más vendida</span>}
+                </div>
+                <div style={{ textAlign:"right", flexShrink:0 }}>
+                  <div style={{ fontWeight:900, fontSize:13, color:i===0?C.green:C.purple }}>{m.uds} uds</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:C.muted }}>{fmt(m.total)}</div>
+                </div>
+              </div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((m.uds/maxMarca)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#8B5CF6,#4A90FF)" }} /></div>
+            </div>
+          ))}
+          {byBrand.length > N_MARCA && (
+            <button onClick={()=>setVerMarcas(v=>!v)} style={{ width:"100%", marginTop:2, background:C.bg, border:"none", borderRadius:12, padding:"10px", fontWeight:900, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}>
+              {verMarcas ? "▲ Encoger la lista" : `▼ Desplegar las ${byBrand.length} marcas`}
+            </button>
+          )}
+        </div>
         </div>
         <div>
           <div className="card" style={{ padding:20, marginBottom:16 }}>
