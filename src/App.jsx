@@ -2547,7 +2547,6 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
           venta={edit}
           products={products}
           customers={customers}
-          setCustomers={setCustomers}
           onClose={() => setEdit(null)}
           onSave={guardarEdicion}
         />
@@ -3706,7 +3705,7 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
 // ── ✏️ EDITAR una venta ya registrada ─────────────────────────────────────────
 // Corrige la referencia (color/talla), cantidad, precio, fecha, método o cliente.
 // Al guardar, las unidades se mueven SOLAS en el inventario (aplicarCambioVenta).
-function EditSaleModal({ venta, products, customers, setCustomers, onClose, onSave }) {
+function EditSaleModal({ venta, products, customers, onClose, onSave }) {
   const original = products.find(x => String(x.id) === String(venta.productId));
   const [pid, setPid]     = useState(venta.productId == null ? "" : String(venta.productId));
   const [qty, setQty]     = useState(Math.max(1, Number(venta.qty) || 1));
