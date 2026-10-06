@@ -1759,6 +1759,26 @@ function aplicarDevolucion(setProducts, ventasBorradas) {
   }));
 }
 
+// ✏️ EDITAR una venta: el inventario se reajusta solo.
+//    Si cambia de referencia/color/talla o de cantidad, el producto VIEJO
+//    recupera sus unidades y el NUEVO las descuenta (delta = unidades vendidas).
+function aplicarCambioVenta(setProducts, vieja, nueva) {
+  const delta = {};
+  const sumar = (pid, q, signo) => {
+    if (pid == null || !q) return;
+    const k = String(pid);
+    delta[k] = (delta[k] || 0) + signo * q;
+  };
+  if (vieja) sumar(vieja.productId, vieja.qty || 0, -1);
+  if (nueva) sumar(nueva.productId, nueva.qty || 0, +1);
+  if (!Object.keys(delta).length) return;
+  setProducts(prev => prev.map(p => {
+    const d = delta[String(p.id)];
+    if (!d) return p;
+    return { ...p, stock: Math.max(0, (p.stock || 0) - d), sold: Math.max(0, (p.sold || 0) + d) };
+  }));
+}
+
 // ── HOME ──────────────────────────────────────────────────────────────────────
 function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lowStock, setTab, setModal, isMobile }) {
   const [rango, setRango] = useState({ id:"todo" });
@@ -2404,6 +2424,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 // ── SALES ─────────────────────────────────────────────────────────────────────
 function Sales({ sales, setSales, products, customers, setProducts, totalSales, isMobile, showToast }) {
   const [rango, setRango] = useState({ id:"todo" });
+  const [edit, setEdit] = useState(null); // ✏️ venta abierta para corregir
   const ventasR = sales.filter(s => enRango(s.date, rango));
   const totalR = ventasR.reduce((a,s)=>a+s.total,0);
   const byMethod = ventasR.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
@@ -2416,6 +2437,15 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
     aplicarDevolucion(setProducts, sales);
     setSales([]);
     showToast("🗑️ Ventas vaciadas · inventario devuelto");
+  };
+  // ✏️ Corregir una venta (referencia, color, talla, cantidad, precio, fecha…):
+  //    al guardar, las unidades se mueven SOLOS de un producto a otro.
+  const guardarEdicion = (nueva) => {
+    const vieja = sales.find(x => String(x.id) === String(nueva.id));
+    setSales(prev => prev.map(x => String(x.id) === String(nueva.id) ? nueva : x));
+    aplicarCambioVenta(setProducts, vieja, nueva);
+    setEdit(null);
+    showToast("✏️ Venta actualizada");
   };
   // ⬇️ Descarga las ventas DEL RANGO elegido en Excel (.xlsx)
   function descargarVentas() {
@@ -2501,13 +2531,27 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
                 <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:C.green }}>{fmt(s.total)}</div>
-                <button title="Eliminar esta referencia (permanente)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                  <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
+                  <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
+                </div>
               </div>
             </div>
           );
         })}
         {ventasR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>Sin ventas en este rango 📅</div>}
       </div>
+      {/* ✏️ Corregir una venta ya registrada */}
+      {edit && (
+        <EditSaleModal
+          venta={edit}
+          products={products}
+          customers={customers}
+          setCustomers={setCustomers}
+          onClose={() => setEdit(null)}
+          onSave={guardarEdicion}
+        />
+      )}
     </div>
   );
 }
@@ -2777,9 +2821,29 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   // 📌 Fuente de verdad = las VENTAS del rango (no el contador del producto).
   //    Así, si borras una venta por devolución, todas las métricas bajan solas.
   const vend = (p) => !p ? 0 : (porProducto[p.id] || 0);
-  const topSold = [...products].sort((a,b)=>vend(b)-vend(a));
-  // 🏆 Solo lo que SE HA VENDIDO (desaparecen las referencias con 0 unidades)
-  const ranking = topSold.filter(p => vend(p) > 0);
+  // 🏆 RANKING POR REFERENCIA (nombre + marca): SUMA todas sus tallas y colores
+  //    y debajo deja discriminado cada variante con sus unidades
+  //    (ej: "Conjunto Emily" → 12 uds → Rosado T-M 5 · Rosado T-L 4 · Negro T-M 3).
+  //    Solo lo que SE HA VENDIDO; sale de las ventas, así que borra/corrige y baja.
+  const dineroPorRef = {};
+  sF.forEach(s => {
+    const p = products.find(x => String(x.id) === String(s.productId));
+    if (!p) return;
+    const k = `${p.name}__${p.brand || ""}`;
+    dineroPorRef[k] = (dineroPorRef[k] || 0) + (s.total || 0);
+  });
+  const porRef = {};
+  products.forEach(p => {
+    const k = `${p.name}__${p.brand || ""}`;
+    const v = vend(p) || 0;
+    if (!porRef[k]) porRef[k] = { key:k, name:p.name || "Producto", brand:p.brand || "", emoji:p.emoji || "📦", uds:0, detalle:[] };
+    porRef[k].uds += v;
+    if (v > 0) porRef[k].detalle.push({ id:String(p.id), label:`${p.color || "–"}${p.size ? ` · T${p.size}` : ""}`, color:p.color || "", uds:v });
+  });
+  const ranking = Object.values(porRef)
+    .filter(r => r.uds > 0)
+    .map(r => ({ ...r, money:dineroPorRef[r.key] || 0, detalle:[...r.detalle].sort((a,b) => b.uds - a.uds) }))
+    .sort((a,b) => b.uds - a.uds || b.money - a.money || String(a.name).localeCompare(String(b.name)));
   // 🏷️ Marcas vendidas en el rango (unidades + dinero), calculado de las ventas
   const marcaUn = {}, marcaTot = {};
   sF.forEach(s => {
@@ -2801,7 +2865,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const bySize = Object.entries(sizeMap).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   const maxSize = bySize[0]?.[1] || 1;
   const totalSizeSold = bySize.reduce((a, [, v]) => a + v, 0);
-  const maxSold = ranking.length ? (vend(ranking[0]) || 1) : 1;
+  const maxSold = ranking.length ? (ranking[0].uds || 1) : 1;
   const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>vend(b)-vend(a));
   const margin = totalSR?pct(profitR,totalSR):0;
   return (
@@ -2811,14 +2875,14 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
         {[
           {label:"Margen neto",   value:`${margin}%`,                                    color:margin>30?C.green:C.orange, bg:margin>30?C.greenLight:C.orangeLight},
           {label:"Ticket prom.", value:fmt(sF.length?Math.round(totalSR/sF.length):0), color:C.blue,   bg:C.blueLight},
-          {label:"Más vendido",  value:ranking[0]?.name.split(" ")[0]||"—",              color:C.yellow, bg:C.yellowLight},
+          {label:"Más vendido",  value:ranking[0] ? ranking[0].name.split(" ").slice(0,2).join(" ") : "—", color:C.yellow, bg:C.yellowLight},
           {label:"Referencias",  value:products.length,                                  color:C.purple, bg:C.purpleLight},
         ].map(k=><div key={k.label} className="stat-card" style={{ background:k.bg }}><div style={{ fontSize:11,fontWeight:800,color:k.color,marginBottom:6,textTransform:"uppercase" }}>{k.label}</div><div style={{ fontSize:24,fontWeight:900,color:C.text }}>{k.value}</div></div>)}
       </div>
       <div className={isMobile?"":"desktop-2col"}>
         <div>
         <div className="card" style={{ padding:20, marginBottom:16 }}>
-          <CabeceraPlegable titulo="🏆 Ranking de ventas" total={ranking.length} etqTotal="vendidas" limite={N_RANK} abierto={verRanking} onToggle={()=>setVerRanking(v=>!v)}
+          <CabeceraPlegable titulo="🏆 Ranking de ventas" total={ranking.length} etqTotal="referencias" limite={N_RANK} abierto={verRanking} onToggle={()=>setVerRanking(v=>!v)}
             extra={byBrand.length>0 ? <span className="pill" title={`Marca más vendida en ${rango.id==="todo"?"todo":"este rango"}`} style={{ background:C.purpleLight, color:C.purple, fontSize:10.5, padding:"3px 10px" }}>🏷️ {byBrand[0].brand} · {byBrand[0].uds} uds</span> : null} />
           {ranking.length === 0 && (
             <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
@@ -2826,22 +2890,33 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
               <span style={{ fontWeight:600 }}>Cambia el rango de tiempo para ver quién lidera.</span>
             </div>
           )}
-          {ranking.slice(0, verRanking ? ranking.length : N_RANK).map((p,i)=>(
-            <div key={p.id} style={{ marginBottom:14 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center" }}>
-                <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+          {ranking.slice(0, verRanking ? ranking.length : N_RANK).map((r,i)=>(
+            <div key={r.key} style={{ marginBottom:14 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center",gap:8 }}>
+                <div style={{ display:"flex",gap:8,alignItems:"center",minWidth:0 }}>
                   <span style={{ fontSize:13,fontWeight:900,color:i===0?C.yellow:C.muted,minWidth:20 }}>#{i+1}</span>
-                  <div className="color-dot" style={{ width:14,height:14,background:getColorCSS(p.color) }} />
-                  <span style={{ fontWeight:800,fontSize:13 }}>{p.name} <span style={{ color:C.muted,fontWeight:600 }}>/ {p.color}</span></span>
+                  <span style={{ fontWeight:800,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{r.name} <span style={{ color:C.muted,fontWeight:600 }}>/ {r.brand||"—"}</span></span>
                 </div>
-                <span style={{ fontWeight:900,color:C.green,fontSize:13 }}>{vend(p)}</span>
+                <div style={{ textAlign:"right",flexShrink:0 }}>
+                  <div style={{ fontWeight:900,color:C.green,fontSize:13 }}>{r.uds} uds</div>
+                  <div style={{ fontSize:11,fontWeight:800,color:C.muted }}>{fmt(r.money)}</div>
+                </div>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((vend(p)/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
+              {/* 🔎 Discriminado: cada color/talla de la referencia con SUS unidades */}
+              <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:6 }}>
+                {r.detalle.map(d=>(
+                  <span key={d.id} className="pill" style={{ background:C.bg, color:C.text, fontSize:10.5, padding:"3px 9px", gap:5 }}>
+                    <span className="color-dot" style={{ width:9,height:9,background:getColorCSS(d.color), flexShrink:0 }} />
+                    {d.label} <b style={{ color:C.green }}>{d.uds}</b>
+                  </span>
+                ))}
+              </div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((r.uds/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
             </div>
           ))}
           {ranking.length > N_RANK && (
             <button onClick={()=>setVerRanking(v=>!v)} style={{ width:"100%", marginTop:2, background:C.bg, border:"none", borderRadius:12, padding:"10px", fontWeight:900, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", color:C.text }}>
-              {verRanking ? "▲ Encoger la lista" : `▼ Desplegar las ${ranking.length} vendidas`}
+              {verRanking ? "▲ Encoger la lista" : `▼ Desplegar las ${ranking.length} referencias`}
             </button>
           )}
         </div>
@@ -3623,6 +3698,109 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
             }}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── ✏️ EDITAR una venta ya registrada ─────────────────────────────────────────
+// Corrige la referencia (color/talla), cantidad, precio, fecha, método o cliente.
+// Al guardar, las unidades se mueven SOLAS en el inventario (aplicarCambioVenta).
+function EditSaleModal({ venta, products, customers, setCustomers, onClose, onSave }) {
+  const original = products.find(x => String(x.id) === String(venta.productId));
+  const [pid, setPid]     = useState(venta.productId == null ? "" : String(venta.productId));
+  const [qty, setQty]     = useState(Math.max(1, Number(venta.qty) || 1));
+  const [precio, setPrecio] = useState(String(venta.qty > 0 ? Math.round((venta.total || 0) / venta.qty) : (venta.total || 0)));
+  const [fecha, setFecha] = useState(venta.date || hoyISO());
+  const [method, setMethod] = useState(venta.method || "Efectivo");
+  const [cli, setCli]     = useState(venta.customerId ? String(venta.customerId) : "");
+  const [err, setErr]     = useState("");
+  const p = products.find(x => String(x.id) === String(pid));
+  const unit = Math.max(0, numDinero(precio));
+  const total = unit * qty;
+  const esMismo = !!(original && p && String(original.id) === String(p.id));
+  const disponible = p ? (p.stock || 0) + (esMismo ? (venta.qty || 0) : 0) : 0;
+  const cambioRef = !!(original && p && !esMismo);
+  const opciones = products.map(pp => ({
+    id: String(pp.id),
+    name: `${pp.emoji || "📦"} ${pp.name} — ${pp.color || "–"}/${pp.size || "–"} (${pp.stock} disp.) — ${fmt(pp.price)}`,
+    txt: [pp.name, pp.brand, pp.sku, pp.barcode, pp.color, pp.size, pp.category].join(" "),
+  }));
+  const opcionesCli = [
+    ...(cli ? [{ id:"", name:"👤 Sin cliente (venta anónima)", txt:"" }] : []),
+    ...(customers || []).map(c => ({ id:String(c.id), name:`👤 ${c.name}${c.city ? ` · ${c.city}` : ""}`, txt:[c.name,c.city,c.phone,c.email].join(" ") })),
+  ];
+  function guardar() {
+    if (!p) { setErr("⚠️ Elige la referencia (color y talla) de la venta"); return; }
+    if (qty < 1) { setErr("⚠️ La cantidad debe ser al menos 1"); return; }
+    if (qty > disponible) { setErr(`⚠️ Solo hay ${disponible} unidades disponibles de ${p.name}`); return; }
+    if (!fecha) { setErr("⚠️ Elige la fecha de la venta"); return; }
+    setErr("");
+    onSave({ ...venta, productId:String(p.id), qty, total, date:fecha, method, customerId: cli || null });
+  }
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>✏️ Editar venta</div>
+        <div style={{ fontSize:12.5, color:C.muted, fontWeight:700, marginBottom:18 }}>Corrige la referencia, color, talla, cantidad, precio o fecha</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>👤 Cliente (opcional)</div>
+            <SelectorBuscador titulo="Cliente" phBusqueda="🔍 Buscar por nombre, ciudad o celular" placeholder="👤 Elegir cliente ▼" opciones={opcionesCli} valor={cli} onElegir={id => { setCli(id); setErr(""); }} buscarEn={o => o.txt} />
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>🎽 Referencia · color · talla</div>
+            <SelectorBuscador titulo="Referencia" phBusqueda="🔍 Escribe el nombre (también: marca, talla, SKU…)" placeholder="🔎 Buscar producto por nombre ▼" opciones={opciones} valor={pid} onElegir={id => { setPid(id); setErr(""); }} buscarEn={o => o.txt} />
+            {original && (
+              <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:6 }}>
+                Estaba: {original.name} · {original.color || "–"}/T{original.size || "–"} · {original.stock} en stock
+              </div>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:8, textTransform:"uppercase" }}>Cantidad</div>
+            <div style={{ display:"flex", gap:16, alignItems:"center", justifyContent:"center" }}>
+              <button className="stock-btn" style={{ width:48, height:48, fontSize:24 }} onClick={() => setQty(q => Math.max(1, q - 1))}>-</button>
+              <span style={{ fontSize:36, fontWeight:900, minWidth:50, textAlign:"center" }}>{qty}</span>
+              <button className="stock-btn" style={{ width:48, height:48, fontSize:24 }} onClick={() => setQty(q => Math.min(disponible || 99, q + 1))}>+</button>
+            </div>
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, textAlign:"center", marginTop:6 }}>Disponibles: {disponible}</div>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>Precio unitario ($)</div>
+              <input className="stk-input" type="number" inputMode="numeric" value={precio} onChange={e => { setPrecio(e.target.value); setErr(""); }} />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>Fecha</div>
+              <input className="stk-input" type="date" value={fecha} onChange={e => { setFecha(e.target.value); setErr(""); }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:8, textTransform:"uppercase" }}>Método de pago</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {["Efectivo","Tarjeta","Nequi","Transferencia","Daviplata"].map(m => (
+                <button key={m} className={`filter-btn ${method === m ? "active" : ""}`} onClick={() => setMethod(m)}>{m}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background:C.greenLight, borderRadius:16, padding:"16px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:13, color:C.muted, fontWeight:700 }}>Total de esta venta</div>
+            <div style={{ fontSize:36, fontWeight:900, color:C.green }}>{fmt(total)}</div>
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700 }}>{qty} ud{qty === 1 ? "" : "s"} × {fmt(unit)}</div>
+          </div>
+          {cambioRef && (
+            <div style={{ background:C.blueLight, borderRadius:12, padding:"10px 12px", fontSize:12, fontWeight:800, color:C.blue, lineHeight:1.5 }}>
+              🔄 Al guardar: {original.name} ({original.color || "–"}/T{original.size || "–"}) recupera {venta.qty} ud y {p.name} ({p.color || "–"}/T{p.size || "–"}) descuenta {qty}.
+            </div>
+          )}
+        </div>
+        {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800, marginTop:14 }}>{err}</div>}
+        <div style={{ display:"flex", gap:10, marginTop:20 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
+          <button className="btn-main" onClick={guardar} style={{ flex:2 }}>Guardar cambios</button>
+        </div>
       </div>
     </div>
   );
