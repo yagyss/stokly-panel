@@ -3004,7 +3004,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                       T {size}
                     </span>
                     <span style={{ fontWeight:800, fontSize:13, color:i===0?C.green:C.muted }}>
-                      {i===0 ? "🏆 La más vendida" : `${pct(sold, totalSizeSold)}% de lo vendido`}
+                      {i===0 ? `🏆 La más vendida · ${pct(sold, totalSizeSold)}%` : `${pct(sold, totalSizeSold)}% de lo vendido`}
                     </span>
                   </div>
                   <span style={{ fontWeight:900, fontSize:13, color:i===0?C.green:C.purple }}>{sold} uds</span>
