@@ -2656,8 +2656,8 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
 }
 
 // ── FINANCE ───────────────────────────────────────────────────────────────────
-function Finance({ products, sales, expenses, totalSales, totalExpenses, profit, isMobile }) {
-  const [sec, setSec] = useState("cashflow");
+function Finance({ products, sales, expenses, totalSales, totalExpenses, profit, isMobile, secInicial }) {
+  const [sec, setSec] = useState(secInicial || "cashflow");
   const [rango, setRango] = useState({ id:"todo" });
   const sF = sales.filter(s => enRango(s.date, rango));
   const eF = expenses.filter(e => solapaRango(e, rango));
@@ -2668,12 +2668,43 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
   const opExp  = eF.filter(e=>e.category==="Operacional").reduce((a,e)=>a+e.amount,0);
   const cogs   = sF.reduce((a,s)=>{const p=products.find(x=>String(x.id)===String(s.productId));return a+(p?p.cost*s.qty:0);},0);
   const grossP = totalSalesR - cogs;
+  // 🎯 Lo que queda DE VERDAD en el bolsillo: ventas − costo de la mercancía − gastos.
+  //    (profitR es sólo caja: entradas − salidas; NO descuenta el costo de lo vendido)
+  const gananciaNeta = grossP - totalExpensesR;
   const gMargin= pct(grossP,totalSalesR);
-  const nMargin= pct(profitR,totalSalesR);
+  const nMargin= pct(gananciaNeta,totalSalesR);
   const cpa    = sF.length > 0 ? mktExp/sF.length : 0;
   const fixed  = opExp + mktExp;
   const breakEven = gMargin > 0 ? (fixed/(gMargin/100)) : 0;
   const frozen = products.reduce((a,p)=>a+p.stock*p.cost,0);
+  // 🛍️ CONJUNTOS VENDIDOS en el rango (sólo los que SÍ se vendieron), de MAYOR
+  //    a MENOR ganancia, con su ingreso, su costo y lo que dejó cada uno.
+  const vendidasMap = {};
+  for (const s of sF) {
+    if (!s.qty || s.productId == null) continue;
+    const p = products.find(x => String(x.id) === String(s.productId));
+    if (!p) continue;
+    const k = `${p.name}__${p.brand || ""}`;
+    if (!vendidasMap[k]) vendidasMap[k] = { key:k, name:p.name, brand:p.brand||"", emoji:p.emoji||"📦", uds:0, rev:0, cost:0, vars:{} };
+    const r = vendidasMap[k];
+    r.uds += s.qty;
+    r.rev += s.total;
+    r.cost += (Number(p.cost) || 0) * s.qty;
+    const vk = `${p.color || "–"} · ${p.size ? "T" + p.size : "–"}`;
+    r.vars[vk] = (r.vars[vk] || 0) + s.qty;
+  }
+  const vendidas = Object.values(vendidasMap)
+    .map(r => ({
+      ...r,
+      detalle: Object.entries(r.vars).map(([l, u]) => `${l} ${u}`).join(" · "),
+      gp: r.rev - r.cost,
+      m: r.rev > 0 ? pct(r.rev - r.cost, r.rev) : 0,
+    }))
+    .sort((a, b) => b.gp - a.gp || b.rev - a.rev);
+  // 💸 Gastos del rango: primero el total por categoría y luego el detalle del
+  //    gasto MÁS ALTO al más bajo (así se ve qué se comió la ganancia).
+  const gastosPorCat = eF.reduce((acc, e) => { const c = e.category || "Otro"; acc[c] = (acc[c] || 0) + (e.amount || 0); return acc; }, {});
+  const gastosLista = [...eF].sort((a, b) => (b.amount || 0) - (a.amount || 0));
   const rg = rangoAFechas(rango);
   const todasFechas = [...sales.map(s=>s.date), ...expenses.map(e=>e.date)].filter(Boolean).sort();
   const f0 = rg.from || todasFechas[0] || restarDiasISO(29);
@@ -2738,29 +2769,94 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
       )}
       {sec==="profitability" && (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          {/* 💎 Cabecera: la ganancia NETA (ventas − costo − gastos) */}
           <div style={{ background:"linear-gradient(135deg,#8B5CF6,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-            <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>{rango.id==="todo"?"Ganancia bruta total":"Ganancia bruta · "+rangoLabel(rango)}</div>
-            <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:4 }}>{fmt(grossP)}</div>
-            <div style={{ fontSize:13,opacity:0.85 }}>Bruto: {gMargin}% · Neto: {nMargin}%</div>
+            <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>{rango.id==="todo"?"Ganancia neta total":"Ganancia neta · "+rangoLabel(rango)}</div>
+            <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:6 }}>{fmt(gananciaNeta)}</div>
+            <div style={{ fontSize:13,opacity:0.92,fontWeight:800 }}>💰 {fmt(totalSalesR)} − 📦 {fmt(cogs)} − 💸 {fmt(totalExpensesR)}</div>
+            <div style={{ fontSize:13,opacity:0.85,marginTop:3 }}>Bruto: {gMargin}% · Neto: {nMargin}%</div>
           </div>
-          <div className={isMobile?"":"desktop-2col"} style={{ gap:12 }}>
-            {products.filter(p=>rango.id==="todo"||sF.some(s=>String(s.productId)===String(p.id))).map(p=>{const mis=sF.filter(s=>String(s.productId)===String(p.id));const unidades=mis.reduce((a,s)=>a+s.qty,0);const rev=mis.reduce((a,s)=>a+s.total,0);const cog=unidades*p.cost;const gp=rev-cog;const m=rev>0?pct(gp,rev):0;return(
-              <div key={p.id} className="card" style={{ padding:16 }}>
-                <div style={{ display:"flex",gap:10,alignItems:"center",marginBottom:12 }}>
-                  <div className="color-dot" style={{ width:20,height:20,background:getColorCSS(p.color) }} />
-                  <div style={{ flex:1 }}><div style={{ fontWeight:900,fontSize:14 }}>{p.name} <span style={{ color:C.muted,fontWeight:600,fontSize:12 }}>· {p.color}/T{p.size} · {unidades} uds</span></div></div>
-                  <span className="pill" style={{ background:m>40?C.greenLight:m>20?C.yellowLight:C.redLight, color:m>40?C.green:m>20?C.yellow:C.red }}>{m}%</span>
-                </div>
-                <div className="grid-2" style={{ gap:8 }}>
-                  {[{l:"Ingresos",v:fmt(rev),c:C.blue},{l:"Ganancia",v:fmt(gp),c:gp>0?C.green:C.red}].map(k=>(
-                    <div key={k.l} style={{ background:C.bg,borderRadius:10,padding:"8px 12px" }}>
-                      <div style={{ fontSize:10,color:C.muted,fontWeight:700,marginBottom:3 }}>{k.l}</div>
-                      <div style={{ fontSize:13,fontWeight:900,color:k.c }}>{k.v}</div>
-                    </div>
-                  ))}
-                </div>
+
+          {/* 🧾 La cuenta completa: de dónde sale cada peso */}
+          <div className="card" style={{ padding:20 }}>
+            <div className="section-title">🧾 De dónde sale tu rentabilidad</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:9, marginTop:8 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:14 }}>
+                <span style={{ fontWeight:800 }}>💰 Ventas (lo cobrado)</span>
+                <span style={{ fontWeight:900, color:C.blue }}>{fmt(totalSalesR)}</span>
               </div>
-            );})}
+              <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:14 }}>
+                <span style={{ fontWeight:800 }}>📦 Costo de la mercancía vendida</span>
+                <span style={{ fontWeight:900, color:C.red }}>−{fmt(cogs)}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:14, paddingTop:9, borderTop:"1.5px dashed "+C.border }}>
+                <span style={{ fontWeight:900 }}>✨ Ganancia bruta</span>
+                <span style={{ fontWeight:900, color:grossP>=0?C.green:C.red }}>{fmt(grossP)}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:14 }}>
+                <span style={{ fontWeight:800 }}>💸 Gastos del negocio {rango.id!=="todo"?`· ${rangoLabel(rango)}`:""} ({eF.length})</span>
+                <span style={{ fontWeight:900, color:C.red }}>−{fmt(totalExpensesR)}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:16, paddingTop:9, borderTop:"2px solid "+C.border }}>
+                <span style={{ fontWeight:900 }}>🎯 Ganancia neta</span>
+                <span style={{ fontWeight:900, color:gananciaNeta>=0?C.green:C.red }}>{fmt(gananciaNeta)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 🛍️ Lo que SÍ se vendió, de mayor a menor */}
+          <div className="card" style={{ padding:20 }}>
+            <div className="section-title">🛍️ Conjuntos vendidos{rango.id!=="todo"?` · ${rangoLabel(rango)}`:""}</div>
+            <div style={{ fontSize:12, color:C.muted, fontWeight:700, marginTop:-4, marginBottom:12 }}>De MAYOR a MENOR ganancia · sólo lo que se vendió</div>
+            {vendidas.length===0 && <div style={{ textAlign:"center", padding:24, color:C.muted, fontWeight:700 }}>Sin ventas en este rango 📅</div>}
+            <div className={isMobile?"":"desktop-2col"} style={{ gap:12 }}>
+              {vendidas.map((r,i)=>(
+                <div key={r.key} className="card" style={{ padding:16 }}>
+                  <div style={{ display:"flex", gap:9, alignItems:"center", marginBottom:10 }}>
+                    <span style={{ fontWeight:900, fontSize:13, color:C.muted, width:16, flexShrink:0 }}>{i+1}.</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:900, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.emoji} {r.name}</div>
+                      <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.uds} ud{r.uds===1?"":"s"} · {r.detalle}</div>
+                    </div>
+                    <span className="pill" style={{ background:r.m>40?C.greenLight:r.m>20?C.yellowLight:C.redLight, color:r.m>40?C.green:r.m>20?C.yellow:C.red, flexShrink:0 }}>{r.m}%</span>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:7 }}>
+                    {[{l:"Ingresos",v:r.rev,c:C.blue},{l:"Costo",v:r.cost,c:C.red},{l:"Ganancia",v:r.gp,c:r.gp>=0?C.green:C.red}].map(k=>(
+                      <div key={k.l} style={{ background:C.bg, borderRadius:10, padding:"8px 9px", minWidth:0 }}>
+                        <div style={{ fontSize:10, color:C.muted, fontWeight:700, marginBottom:3 }}>{k.l}</div>
+                        <div style={{ fontSize:13, fontWeight:900, color:k.c, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{fmt(k.v)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 💸 Todos los gastos: de dónde salió el dinero */}
+          <div className="card" style={{ padding:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <div className="section-title" style={{ marginBottom:0 }}>💸 Gastos{rango.id!=="todo"?` · ${rangoLabel(rango)}`:""}</div>
+              <div style={{ fontWeight:900, fontSize:15, color:C.red }}>−{fmt(totalExpensesR)}</div>
+            </div>
+            {Object.keys(gastosPorCat).length>0 && (
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", margin:"12px 0 2px" }}>
+                {Object.entries(gastosPorCat).sort((a,b)=>b[1]-a[1]).map(([cat,v])=>(
+                  <span key={cat} className="pill" style={{ background:C.orangeLight, color:C.orange, fontSize:11, padding:"4px 10px" }}>{cat} · {fmt(v)}</span>
+                ))}
+              </div>
+            )}
+            {gastosLista.length===0 && <div style={{ textAlign:"center", padding:24, color:C.muted, fontWeight:700 }}>Sin gastos en este rango 🎉</div>}
+            {gastosLista.map(e=>(
+              <div key={e.id} className="row-item">
+                <div style={{ width:36,height:36,background:C.orangeLight,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0 }}>{e.emoji}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:800, fontSize:13.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.concept}</div>
+                  <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}</div>
+                </div>
+                <div style={{ fontWeight:900, fontSize:14.5, color:C.red, flexShrink:0 }}>{fmt(e.amount)}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -2783,7 +2879,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           </div>
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">📊 Márgenes</div>
-            {[{l:"Margen Bruto",v:gMargin,a:grossP,c:C.green},{l:"Margen Neto",v:nMargin,a:profitR,c:nMargin>0?C.teal:C.red}].map(m=>(
+            {[{l:"Margen Bruto",v:gMargin,a:grossP,c:C.green},{l:"Margen Neto",v:nMargin,a:gananciaNeta,c:nMargin>0?C.teal:C.red}].map(m=>(
               <div key={m.l} style={{ marginBottom:18 }}>
                 <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
                   <span style={{ fontWeight:800,fontSize:14 }}>{m.l}</span>
@@ -2796,8 +2892,8 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">💹 ROI del negocio</div>
             <div style={{ textAlign:"center",padding:"10px 0 20px" }}>
-              <div style={{ fontSize:52,fontWeight:900,color:profitR>0?C.green:C.red }}>{pct(profitR,totalExpensesR)}%</div>
-              <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>retorno sobre lo invertido</div>
+              <div style={{ fontSize:52,fontWeight:900,color:gananciaNeta>0?C.green:C.red }}>{pct(gananciaNeta,totalExpensesR)}%</div>
+              <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>ganancia neta sobre tus gastos</div>
             </div>
           </div>
         </div>
