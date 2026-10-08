@@ -1288,7 +1288,7 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
                       <div key={s.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid "+C.border+"60" }}>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p?.name||"Producto"}</div>
-                          <div style={{ fontSize:11, color:C.muted, fontWeight:700 }}>{s.date} · {p?`${p.color||"–"}/T${p.size||"–"}`:""} · {s.method}</div>
+                          <div style={{ fontSize:11, color:C.muted, fontWeight:700 }}>{s.date} · {p?`${p.color||"–"}/T${p.size||"–"}`:""} · {s.method}{s.discount>0 && <span style={{ color:C.red, fontWeight:900 }}> · 🏷️ −{fmt(s.discount)}</span>}</div>
                         </div>
                         <div style={{ fontSize:12, fontWeight:800, color:C.muted, flexShrink:0 }}>×{s.qty}</div>
                         <div style={{ fontWeight:900, fontSize:13.5, color:C.green, flexShrink:0, minWidth:72, textAlign:"right" }}>{fmt(s.total)}</div>
@@ -2192,7 +2192,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       {(search || filterSize!=="Todas" || rango.id!=="todo") && (
         <div style={{ background:groups.length?C.blueLight:C.redLight, borderRadius:12, padding:"10px 16px", fontSize:13, fontWeight:700, color:groups.length?C.blue:C.red }}>
           {groups.length
-            ? `✅ ${groups.length} ref · ${filtered.length} variantes${filterSize!=="Todas" ? ` · T${filterSize}` : ""}${rango.id!=="todo" ? ` · 📅 ${rangoLabel(rango)}` : ""}`
+            ? `✅ ${groups.length} ref · ${filtered.length} variantes${filterSize!=="Todas" ? ` · T${filterSize}` : ""}${rango.id!=="todo" ? ` · 📅 ${rangoLabel(rango)}` : ""} · 👆 Toca una referencia para ver sus tallas y colores`
             : `😕 Sin resultados${filterSize!=="Todas" ? ` en talla ${filterSize}` : ""}${rango.id!=="todo" ? ` · 📅 ${rangoLabel(rango)}` : ""}`}
         </div>
       )}
@@ -2208,17 +2208,22 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
       {viewMode==="visual" && (
         <div className="grid-inv">
           {groups.length===0 && <div style={{ textAlign:"center", padding:40, color:C.muted, fontWeight:700 }}>Sin resultados 🔍</div>}
-          {groups.map((group, gi) => {
+          {groups.map((group) => {
             const hasAlert = group.variants.some(v=>v.stock<=v.minStock);
             const totalStock = group.variants.reduce((a,v)=>a+v.stock,0);
             // 📸 Todas las fotos de la referencia (todos sus colores) para la foto principal
             const fotosGrupo = (group.imgs && group.imgs.length) ? group.imgs : imgsDe(group.image);
-            const isExpanded = expandedGroup===gi || search.length>0;
+            // 📂 Todo queda PLEGADO por defecto (también cuando buscas): la
+            //    tabla de tallas y colores solo se abre al tocar la referencia.
+            //    Se guarda por LLAVE (nombre+marca) y no por posición, para que
+            //    buscar o filtrar no cambie de tarjeta la que estaba abierta.
+            const gk = `${group.name}__${group.brand || ""}`;
+            const isExpanded = expandedGroup === gk;
             const margin = group.price ? Math.round(((group.price-group.cost)/group.price)*100) : 0;
             return (
-              <div key={gi} className={`group-card ${hasAlert?"has-alert":""}`}>
+              <div key={gk} className={`group-card ${hasAlert?"has-alert":""}`}>
                 {/* Header */}
-                <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded&&!search?null:gi)}>
+                <div style={{ padding:"16px 18px 12px", cursor:"pointer" }} onClick={()=>setExpandedGroup(isExpanded?null:gk)}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                       <div style={{ width:64,height:64, background:hasAlert?C.redLight:C.greenLight, borderRadius:17, display:"flex",alignItems:"center",justifyContent:"center", fontSize:32, overflow:"hidden", flexShrink:0 }}>{fotosGrupo.length ? <CarruselFotos fotos={fotosGrupo} w={64} h={64} onAbrir={ix => setVisor({ fotos: fotosGrupo, i: ix })} /> : group.emoji}</div>
@@ -2471,10 +2476,10 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
       "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
       () => {
         try {
-          const cab = ["fecha","sku","producto","color","talla","cantidad","método","total"];
+          const cab = ["fecha","sku","producto","color","talla","cantidad","método","descuento","total"];
           const filas = ventasR.map(s => {
             const p = products.find(x => x.id === s.productId);
-            return [s.date, p?.sku || "", p?.name || "Producto", p?.color || "", p?.size || "", s.qty, s.method, s.total];
+            return [s.date, p?.sku || "", p?.name || "Producto", p?.color || "", p?.size || "", s.qty, s.method, s.discount || 0, s.total];
           });
           const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
           ws["!cols"] = cab.map((h, i) => {
@@ -2547,6 +2552,12 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
                 <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:C.green }}>{fmt(s.total)}</div>
+                {s.discount>0 && (
+                  <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", lineHeight:1.35, marginTop:-4 }}>
+                    🏷️ Rebaja −{fmt(s.discount)}
+                    <div style={{ color:C.muted, fontWeight:700, textDecoration:"line-through" }}>antes {fmt((s.total||0) + s.discount)}</div>
+                  </div>
+                )}
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
                   <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
                   <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
@@ -3528,7 +3539,13 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
   const renglones = items
     .map(it => ({ ...it, pr: products.find(x=>String(x.id)===String(it.pid)) }))
     .filter(r => r.pr);
-  const total = renglones.reduce((a,r)=>a + r.pr.price*r.qty, 0);
+  // 🏷️ REBAJAS: cada referencia puede llevar SU descuento en plata y el total
+  //    a cobrar sale en vivo:  (precio × cantidad) − descuento.
+  const bruto   = (r) => r.pr.price * r.qty;
+  const dtoDe   = (r) => Math.max(0, Math.round(Number(r.desc) || 0));
+  const subtotal = renglones.reduce((a,r)=>a + bruto(r), 0);
+  const totalDesc = renglones.reduce((a,r)=>a + dtoDe(r), 0);
+  const total = subtotal - totalDesc;
   const unidades = renglones.reduce((a,r)=>a + r.qty, 0);
   // 🔍 Opciones del buscador: productos con stock (más los ya agregados y el elegido)
   //    con texto para encontrarlos por nombre, marca, talla, SKU o código de barras.
@@ -3547,7 +3564,7 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     setItems(prev => {
       const i = prev.findIndex(x => String(x.pid) === String(prod.id));
       if(i >= 0){ const arr=[...prev]; arr[i]={...arr[i], qty: Math.min(prod.stock, arr[i].qty + cantidad)}; return arr; }
-      return [...prev, { pid:String(prod.id), qty:+cantidad }];
+      return [...prev, { pid:String(prod.id), qty:+cantidad, desc:0 }];
     });
     setPid(""); setQty(1); setErr("");
   }
@@ -3559,6 +3576,12 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     const st = products.find(y => String(y.id) === String(x.pid))?.stock || 1;
     return { ...x, qty: Math.max(1, Math.min(st, x.qty + d)) };
   }));
+  // 🏷️ Descuento (rebaja) de UNA referencia: solo números, sin pesos ni puntos
+  const ponerDesc = (idD, v) => {
+    const limpio = String(v).replace(/[^\d]/g, "").slice(0, 9);
+    const n = limpio ? parseInt(limpio, 10) : 0;
+    setItems(prev => prev.map(x => String(x.pid) === String(idD) ? { ...x, desc:n } : x));
+  };
   // 👥 Clientes disponibles en el buscador + creación rápida (nombre, ciudad, celular)
   const opcionesCli = [
     // "Sin cliente" solo aparece cuando ya hay uno elegido (para poder quitarlo)
@@ -3579,6 +3602,9 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     if(!renglones.length){ setErr("⚠️ Agrega al menos una referencia con el botón ➕"); return; }
     const mal = renglones.find(r => (r.pr.stock || 0) < r.qty);
     if(mal){ setErr(`⚠️ Solo hay ${mal.pr.stock} unidades disponibles de ${mal.pr.name}`); return; }
+    // 🏷️ La rebaja de una referencia no puede ser mayor que lo que vale esa línea
+    const malDto = renglones.find(r => dtoDe(r) > bruto(r));
+    if(malDto){ setErr(`⚠️ El descuento de ${malDto.pr.name} no puede superar ${fmt(bruto(malDto))}`); return; }
     setErr("");
     // Todo lo de esta venta comparte el mismo prefijo de id: así en el historial
     // se ven juntos y se borran juntos. Con 1 sola referencia se guarda como antes.
@@ -3587,7 +3613,8 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
       id: g ? `${g}${i+1}` : newId(),
       productId:String(r.pid),
       qty:+r.qty,
-      total:r.pr.price*r.qty,
+      total: bruto(r) - dtoDe(r),
+      discount: dtoDe(r),
       date:hoyISO(),
       method,
       customerId: cli || null,
@@ -3667,19 +3694,38 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
               <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>🛒 En esta venta · {renglones.length} {renglones.length===1?"referencia":"referencias"} · {unidades} uds</div>
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {renglones.map(r=>(
-                  <div key={String(r.pid)} style={{ display:"flex", gap:8, alignItems:"center", background:C.bg, border:"1px solid "+C.border, borderRadius:14, padding:"9px 10px" }}>
-                    <div style={{ width:34,height:34, background:C.greenLight, borderRadius:10, display:"flex",alignItems:"center",justifyContent:"center", fontSize:17, flexShrink:0 }}>{r.pr.emoji||"📦"}</div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.name}</div>
-                      <div style={{ fontSize:10.5, color:C.muted, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.color||"–"} · T{r.pr.size||"–"} · {fmt(r.pr.price)} c/u</div>
+                  <div key={String(r.pid)} style={{ background:C.bg, border:"1px solid "+C.border, borderRadius:14, padding:"9px 10px" }}>
+                    <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                      <div style={{ width:34,height:34, background:C.greenLight, borderRadius:10, display:"flex",alignItems:"center",justifyContent:"center", fontSize:17, flexShrink:0 }}>{r.pr.emoji||"📦"}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.name}</div>
+                        <div style={{ fontSize:10.5, color:C.muted, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.pr.color||"–"} · T{r.pr.size||"–"} · {fmt(r.pr.price)} c/u</div>
+                      </div>
+                      <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0 }}>
+                        <button className="stock-btn" onClick={()=>cambiar(r.pid,-1)} title="Menos unidades">−</button>
+                        <span style={{ fontWeight:900, minWidth:18, textAlign:"center", fontSize:14 }}>{r.qty}</span>
+                        <button className="stock-btn" onClick={()=>cambiar(r.pid,1)} title="Más unidades">+</button>
+                      </div>
+                      <div style={{ fontWeight:900, fontSize:14, color:C.green, flexShrink:0, minWidth:70, textAlign:"right" }}>
+                        {fmt(bruto(r) - dtoDe(r))}
+                        {dtoDe(r)>0 && <div style={{ fontSize:10, color:C.muted, fontWeight:800, textDecoration:"line-through", marginTop:1 }}>{fmt(bruto(r))}</div>}
+                      </div>
+                      <button title="Quitar de la venta" onClick={()=>quitar(r.pid)} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit",flexShrink:0 }}>✕</button>
                     </div>
-                    <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0 }}>
-                      <button className="stock-btn" onClick={()=>cambiar(r.pid,-1)} title="Menos unidades">−</button>
-                      <span style={{ fontWeight:900, minWidth:18, textAlign:"center", fontSize:14 }}>{r.qty}</span>
-                      <button className="stock-btn" onClick={()=>cambiar(r.pid,1)} title="Más unidades">+</button>
+                    {/* 🏷️ Rebaja (descuento) SOLO de esta referencia */}
+                    <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginTop:7, paddingLeft:2 }}>
+                      <span style={{ fontSize:11, fontWeight:900, color:C.red }}>🏷️</span>
+                      <input
+                        inputMode="numeric"
+                        placeholder="Descuento $"
+                        title="Descuento (rebaja) de esta referencia"
+                        value={r.desc ? String(r.desc) : ""}
+                        onChange={e => ponerDesc(r.pid, e.target.value)}
+                        style={{ width:120, maxWidth:"100%", padding:"5px 8px", fontSize:12, fontWeight:800, borderRadius:9, border:"1.5px solid "+C.border, background:C.white, fontFamily:"inherit", color:C.text, minWidth:0 }}
+                      />
+                      {dtoDe(r)>0 && <span style={{ fontSize:11.5, fontWeight:900, color:C.red }}>−{fmt(dtoDe(r))}</span>}
+                      <span style={{ fontSize:10.5, color:C.muted, fontWeight:700 }}>rebaja de esta referencia</span>
                     </div>
-                    <div style={{ fontWeight:900, fontSize:14, color:C.green, flexShrink:0, minWidth:70, textAlign:"right" }}>{fmt(r.pr.price*r.qty)}</div>
-                    <button title="Quitar de la venta" onClick={()=>quitar(r.pid)} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit",flexShrink:0 }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -3691,7 +3737,13 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
               {["Efectivo","Tarjeta","Nequi","Transferencia","Daviplata"].map(m=><button key={m} className={`filter-btn ${method===m?"active":""}`} onClick={()=>setMethod(m)}>{m}</button>)}
             </div>
           </div>
-          {renglones.length>0 &&<div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}><div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div><div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div></div>}
+          {renglones.length>0 &&(
+            <div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
+              <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div>
+              <div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div>
+              {totalDesc>0 && <div style={{ fontSize:12.5,fontWeight:800,color:C.red,marginTop:3 }}>🏷️ Subtotal {fmt(subtotal)} · Rebaja −{fmt(totalDesc)}</div>}
+            </div>
+          )}
         </div>
         {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>
@@ -3723,16 +3775,21 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
 // Al guardar, las unidades se mueven SOLAS en el inventario (aplicarCambioVenta).
 function EditSaleModal({ venta, products, customers, onClose, onSave }) {
   const original = products.find(x => String(x.id) === String(venta.productId));
+  // 🏷️ Lo que se cobró ANTES de la rebaja: es con lo que se precia al editar,
+  //    para que precio × cantidad − descuento vuelva al total exacto de antes.
+  const brutoVenta = (Number(venta.total) || 0) + (Number(venta.discount) || 0);
   const [pid, setPid]     = useState(venta.productId == null ? "" : String(venta.productId));
   const [qty, setQty]     = useState(Math.max(1, Number(venta.qty) || 1));
-  const [precio, setPrecio] = useState(String(venta.qty > 0 ? Math.round((venta.total || 0) / venta.qty) : (venta.total || 0)));
+  const [precio, setPrecio] = useState(String(venta.qty > 0 ? Math.round(brutoVenta / venta.qty) : brutoVenta));
+  const [dto, setDto]     = useState(String(Math.max(0, Math.round(Number(venta.discount) || 0))));
   const [fecha, setFecha] = useState(venta.date || hoyISO());
   const [method, setMethod] = useState(venta.method || "Efectivo");
   const [cli, setCli]     = useState(venta.customerId ? String(venta.customerId) : "");
   const [err, setErr]     = useState("");
   const p = products.find(x => String(x.id) === String(pid));
   const unit = Math.max(0, numDinero(precio));
-  const total = unit * qty;
+  const desc = Math.max(0, Math.round(numDinero(dto) || 0));
+  const total = Math.max(0, unit * qty - desc);
   const esMismo = !!(original && p && String(original.id) === String(p.id));
   const disponible = p ? (p.stock || 0) + (esMismo ? (venta.qty || 0) : 0) : 0;
   const cambioRef = !!(original && p && !esMismo);
@@ -3750,8 +3807,9 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
     if (qty < 1) { setErr("⚠️ La cantidad debe ser al menos 1"); return; }
     if (qty > disponible) { setErr(`⚠️ Solo hay ${disponible} unidades disponibles de ${p.name}`); return; }
     if (!fecha) { setErr("⚠️ Elige la fecha de la venta"); return; }
+    if (desc > unit * qty) { setErr(`⚠️ El descuento no puede superar ${fmt(unit * qty)}`); return; }
     setErr("");
-    onSave({ ...venta, productId:String(p.id), qty, total, date:fecha, method, customerId: cli || null });
+    onSave({ ...venta, productId:String(p.id), qty, total, discount: desc, date:fecha, method, customerId: cli || null });
   }
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -3793,6 +3851,11 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
             </div>
           </div>
           <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>🏷️ Descuento ($, opcional)</div>
+            <input className="stk-input" type="number" inputMode="numeric" min="0" placeholder="0" value={dto} onChange={e => { setDto(e.target.value); setErr(""); }} />
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:5 }}>Rebaja que se le hizo a la prenda: se resta del total de la venta.</div>
+          </div>
+          <div>
             <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:8, textTransform:"uppercase" }}>Método de pago</div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
               {["Efectivo","Tarjeta","Nequi","Transferencia","Daviplata"].map(m => (
@@ -3803,7 +3866,8 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
           <div style={{ background:C.greenLight, borderRadius:16, padding:"16px 20px", textAlign:"center" }}>
             <div style={{ fontSize:13, color:C.muted, fontWeight:700 }}>Total de esta venta</div>
             <div style={{ fontSize:36, fontWeight:900, color:C.green }}>{fmt(total)}</div>
-            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700 }}>{qty} ud{qty === 1 ? "" : "s"} × {fmt(unit)}</div>
+            {desc > 0 && <div style={{ fontSize:12, fontWeight:900, color:C.red, marginTop:3 }}>🏷️ Rebaja −{fmt(desc)} · antes {fmt(unit * qty)}</div>}
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:3 }}>{qty} ud{qty === 1 ? "" : "s"} × {fmt(unit)}</div>
           </div>
           {cambioRef && (
             <div style={{ background:C.blueLight, borderRadius:12, padding:"10px 12px", fontSize:12, fontWeight:800, color:C.blue, lineHeight:1.5 }}>

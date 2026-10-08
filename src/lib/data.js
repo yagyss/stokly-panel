@@ -153,15 +153,46 @@ export const productToRow = (p, uid, ws) => ({
   image_url: p.image || null,
 });
 
-export const saleFromRow = (r) => ({
-  id: String(r.id),
-  productId: r.product_id == null ? null : String(r.product_id),
-  qty: Number(r.qty) || 0,
-  total: Number(r.total) || 0,
-  date: typeof r.date === "string" ? r.date.slice(0, 10) : r.date,
-  method: r.method || "Efectivo",
-  customerId: r.customer_id == null || r.customer_id === "" ? null : String(r.customer_id),
-});
+// ══════════════════════════════════════════════════════════════
+//  🏷️ DESCUENTO DE LA VENTA (almacenamiento temporal)
+//  La columna `sales.discount` todavía NO existe en la base de datos, así que
+//  el valor viaja CODIFICADO dentro de `method`:
+//      "Efectivo"  →  "Efectivo·dto:10000"
+//  saleFromRow lo separa: en la app el método SIEMPRE se ve limpio y el
+//  descuento queda guardado en la nube (sobrevive recargas y otros equipos).
+//  ⚙️ Cuando exista la columna: correr
+//     supabase/migrations/*_sales_discount.sql y dejar de codificar aquí
+//     (lectura: si trae columna, manda la columna; si no, la de method).
+// ══════════════════════════════════════════════════════════════
+const RE_DESCUENTO = /^(.*?)·dto:(\d+)$/;
+
+// "Efectivo" + 10000  →  "Efectivo·dto:10000"
+const methodConDescuento = (method, discount) => {
+  const base = method || "Efectivo";
+  const d = Math.max(0, Math.round(Number(discount) || 0));
+  return d > 0 ? `${base}·dto:${d}` : base;
+};
+
+// "Efectivo·dto:10000"  →  { method:"Efectivo", discount:10000 }
+const leerMethod = (raw) => {
+  const m = String(raw || "Efectivo");
+  const t = m.match(RE_DESCUENTO);
+  return t ? { method: t[1] || "Efectivo", discount: Number(t[2]) || 0 } : { method: m, discount: 0 };
+};
+
+export const saleFromRow = (r) => {
+  const m = leerMethod(r.method);
+  return {
+    id: String(r.id),
+    productId: r.product_id == null ? null : String(r.product_id),
+    qty: Number(r.qty) || 0,
+    total: Number(r.total) || 0,
+    date: typeof r.date === "string" ? r.date.slice(0, 10) : r.date,
+    method: m.method,
+    discount: m.discount || Number(r.discount) || 0,
+    customerId: r.customer_id == null || r.customer_id === "" ? null : String(r.customer_id),
+  };
+};
 
 export const saleToRow = (s, uid, ws) => ({
   id: String(s.id),
@@ -171,7 +202,7 @@ export const saleToRow = (s, uid, ws) => ({
   qty: Math.round(+s.qty) || 0,
   total: +s.total || 0,
   date: s.date,
-  method: s.method || "Efectivo",
+  method: methodConDescuento(s.method, s.discount),
   customer_id: s.customerId ? String(s.customerId) : null,
 });
 
