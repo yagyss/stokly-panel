@@ -2774,7 +2774,10 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                     <div style={{ color:C.muted, fontWeight:700, textDecoration:"line-through" }}>antes {fmt((s.total||0) + s.discount)}</div>
                   </div>
                 )}
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+              </div>
+              {/* 🎛️ Acciones en su PROPIA línea de ancho completo: así los botones
+                  envuelven DENTRO de la tarjeta y nunca se salen del borde. */}
+              <div style={{ flex:"1 1 100%", display:"flex", gap:6, flexWrap:"wrap", justifyContent:isMobile?"flex-start":"flex-end" }}>
                   {/* 📦 Acciones del PEDIDO (una sola vez por pedido) */}
                   {esPrimera&&st==="pendiente"&&<button title="Marcar el pedido como enviado a la mensajería" onClick={()=>cambiarEstado(g,"enviado")} style={btnAccion("#DBEAFE","#2563EB")}>🚚 Enviado</button>}
                   {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Confirmar que el cliente recibió y pagó — no vuelve a descontar stock ni duplica el ingreso" onClick={()=>confirmarRecibido(g)} style={btnAccion("#D1FAE5","#047857")}>✅ Confirmar recibido</button>}
@@ -2783,7 +2786,6 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                   {esPrimera&&st==="cancelado"&&<button title="Reabrir el pedido" onClick={()=>cambiarEstado(g, s.modality==="contraentrega"?"pendiente":"entregado")} style={btnAccion(C.bg,C.text)}>🔄 Reabrir</button>}
                   <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
                   <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
-                </div>
               </div>
             </div>
           );
@@ -4039,15 +4041,32 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
   // 🛒 Varias referencias en UNA MISMA venta: se van agregando renglones aquí
   //    y al guardar se registran todos juntos (mismo día, mismo método).
   const [items,setItems]=useState([]);
+  // 🏷️ REBAJA GENERAL: UN solo descuento para TODA la venta. Da igual cuántas
+  //    referencias elijas (2, 3 o 4): se teclea una sola vez y se aplica al conjunto.
+  const [dtoVenta,setDtoVenta]=useState(0);
   const p=products.find(x=>String(x.id)===String(pid));
-  const renglones = items
+  const bruto   = (r) => r.pr.price * r.qty;
+  const crudos  = items
     .map(it => ({ ...it, pr: products.find(x=>String(x.id)===String(it.pid)) }))
     .filter(r => r.pr);
-  // 🏷️ REBAJAS: cada referencia puede llevar SU descuento en plata y el total
-  //    a cobrar sale en vivo:  (precio × cantidad) − descuento.
-  const bruto   = (r) => r.pr.price * r.qty;
+  const subtotal = crudos.reduce((a,r)=>a + bruto(r), 0);
+  // Lo que se tecleó (se valida al guardar) y lo que se aplica mientras tanto
+  //    (nunca más que el subtotal, para no mostrar totales negativos en pantalla).
+  const dtoTecleado = Math.max(0, Math.round(Number(dtoVenta) || 0));
+  const dtoTotal = Math.min(dtoTecleado, subtotal);
+  // 🧾 El descuento GENERAL se reparte SOLO entre las referencias: proporcional a
+  //    lo que vale cada línea y con redondeo acumulado → la suma da SIEMPRE el
+  //    total exacto (cero perdido, cero de más).
+  const renglones = (() => {
+    let b = 0, d = 0;
+    return crudos.map(r => {
+      b += bruto(r);
+      const d0 = d;
+      d = (dtoTotal > 0 && subtotal > 0) ? Math.round(dtoTotal * b / subtotal) : 0;
+      return { ...r, desc: d - d0 };
+    });
+  })();
   const dtoDe   = (r) => Math.max(0, Math.round(Number(r.desc) || 0));
-  const subtotal = renglones.reduce((a,r)=>a + bruto(r), 0);
   const totalDesc = renglones.reduce((a,r)=>a + dtoDe(r), 0);
   const total = subtotal - totalDesc;
   const unidades = renglones.reduce((a,r)=>a + r.qty, 0);
@@ -4080,11 +4099,10 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     const st = products.find(y => String(y.id) === String(x.pid))?.stock || 1;
     return { ...x, qty: Math.max(1, Math.min(st, x.qty + d)) };
   }));
-  // 🏷️ Descuento (rebaja) de UNA referencia: solo números, sin pesos ni puntos
-  const ponerDesc = (idD, v) => {
+  // 🏷️ UN descuento para la venta ENTERA: solo números, sin pesos ni puntos
+  const ponerDescVenta = (v) => {
     const limpio = String(v).replace(/[^\d]/g, "").slice(0, 9);
-    const n = limpio ? parseInt(limpio, 10) : 0;
-    setItems(prev => prev.map(x => String(x.pid) === String(idD) ? { ...x, desc:n } : x));
+    setDtoVenta(limpio ? parseInt(limpio, 10) : 0);
   };
   // 👥 Clientes disponibles en el buscador + creación rápida (nombre, ciudad, celular)
   const opcionesCli = [
@@ -4107,9 +4125,8 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     if(!renglones.length){ setErr("⚠️ Agrega al menos una referencia con el botón ➕"); return; }
     const mal = renglones.find(r => (r.pr.stock || 0) < r.qty);
     if(mal){ setErr(`⚠️ Solo hay ${mal.pr.stock} unidades disponibles de ${mal.pr.name}`); return; }
-    // 🏷️ La rebaja de una referencia no puede ser mayor que lo que vale esa línea
-    const malDto = renglones.find(r => dtoDe(r) > bruto(r));
-    if(malDto){ setErr(`⚠️ El descuento de ${malDto.pr.name} no puede superar ${fmt(bruto(malDto))}`); return; }
+    // 🏷️ El descuento es de la venta ENTERA: no puede superar lo que valen las referencias
+    if(dtoTecleado > subtotal){ setErr(`⚠️ El descuento no puede superar el subtotal de la venta (${fmt(subtotal)})`); return; }
     setErr("");
     // 🧲 Si es publicidad, hay que decir EN QUÉ plataforma (es lo que permite
     //    medir ROAS por plataforma). La campaña es opcional.
@@ -4230,20 +4247,13 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
                       </div>
                       <button title="Quitar de la venta" onClick={()=>quitar(r.pid)} style={{ background:C.redLight,border:"none",borderRadius:8,padding:"5px 8px",cursor:"pointer",fontWeight:800,fontSize:12,color:C.red,fontFamily:"inherit",flexShrink:0 }}>✕</button>
                     </div>
-                    {/* 🏷️ Rebaja (descuento) SOLO de esta referencia */}
-                    <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginTop:7, paddingLeft:2 }}>
-                      <span style={{ fontSize:11, fontWeight:900, color:C.red }}>🏷️</span>
-                      <input
-                        inputMode="numeric"
-                        placeholder="Descuento $"
-                        title="Descuento (rebaja) de esta referencia"
-                        value={r.desc ? String(r.desc) : ""}
-                        onChange={e => ponerDesc(r.pid, e.target.value)}
-                        style={{ width:120, maxWidth:"100%", padding:"5px 8px", fontSize:12, fontWeight:800, borderRadius:9, border:"1.5px solid "+C.border, background:C.white, fontFamily:"inherit", color:C.text, minWidth:0 }}
-                      />
-                      {dtoDe(r)>0 && <span style={{ fontSize:11.5, fontWeight:900, color:C.red }}>−{fmt(dtoDe(r))}</span>}
-                      <span style={{ fontSize:10.5, color:C.muted, fontWeight:700 }}>rebaja de esta referencia</span>
-                    </div>
+                    {/* 🏷️ La rebaja es de la VENTA ENTERA: aquí solo se ve la parte
+                        proporcional que le toca a esta línea */}
+                    {dtoDe(r)>0 && (
+                      <div style={{ marginTop:7, paddingLeft:2, fontSize:10.5, color:C.muted, fontWeight:700 }}>
+                        🏷️ Su parte de la rebaja general: <b style={{ color:C.red }}>−{fmt(dtoDe(r))}</b>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -4314,6 +4324,28 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
               💡 El <b>canal</b> es dónde se hizo la compra (web, WhatsApp…). La <b>atracción</b> es cómo te encontró (orgánico, publicidad…). Son cosas distintas.
             </div>
           </div>
+          {/* 🏷️ UNA sola rebaja para la venta completa (no una por referencia) */}
+          {renglones.length>0 && (
+            <div>
+              <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>🏷️ Rebaja de la venta (opcional)</div>
+              <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
+                <input
+                  inputMode="numeric"
+                  placeholder="Descuento $"
+                  title="Descuento general de la venta: se aplica al conjunto de referencias"
+                  value={dtoVenta ? String(dtoVenta) : ""}
+                  onChange={e=>ponerDescVenta(e.target.value)}
+                  style={{ width:180, maxWidth:"100%", padding:"10px 12px", fontSize:14, fontWeight:800, borderRadius:11, border:"1.5px solid "+C.border, background:C.white, fontFamily:"inherit", color:C.text, minWidth:0 }}
+                />
+                {dtoTecleado>0 && (
+                  <button className="filter-btn" onClick={()=>setDtoVenta(0)} title="Quitar la rebaja de la venta">✕ Quitar</button>
+                )}
+              </div>
+              <div style={{ fontSize:10.5, color:C.muted, fontWeight:700, marginTop:6, lineHeight:1.5 }}>
+                💡 Es <b>UN</b> descuento para toda la venta — aunque elijas 2, 3 o 4 referencias. Se reparte solo entre ellas y el total siempre cuadra.
+              </div>
+            </div>
+          )}
           {renglones.length>0 &&(
             <div style={{ background:modality==="contraentrega"?"#DBEAFE":C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
               <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>{modality==="contraentrega"?"Total a cobrar al entregar":"Total a cobrar"}</div>
