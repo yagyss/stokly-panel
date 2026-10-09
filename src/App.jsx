@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { uploadProductImage, uploadLogoImage, borrarImagenPublica, subirFotoProducto, textoErrorFoto } from "./lib/image.js";
 import { supabase } from "./lib/supabase.js";
+import { useInstalable, INSTRUCCIONES_INSTALAR } from "./lib/pwa.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
 import {
@@ -19,6 +20,25 @@ import {
   newId,
   useCategorias,
   useNegocio,
+  // 📦 ciclo de vida del pedido · 🧲 atribución (migración 20261008000001)
+  ESTADOS,
+  MODALIDADES,
+  ATRIBUCIONES,
+  PLATAFORMAS,
+  CANALES_COMPRA,
+  TIPOS_DEVOLUCION,
+  estadoDe,
+  modalidadDe,
+  etiquetaAtribucion,
+  etiquetaCanal,
+  esConfirmada,
+  ingresoDe,
+  unidadesContadas,
+  esPendienteDeCobro,
+  ingresosPendientes,
+  confirmadas,
+  deltasProducto,
+  deltasBorrado,
 } from "./lib/data.js";
 
 const C = {
@@ -1177,10 +1197,11 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
     .filter(c => !t || plano([c.name,c.city,c.phone,c.email,c.notes].join(" ")).includes(t))
     .map(c => {
       const compras = (sales||[]).filter(s => String(s.customerId) === String(c.id));
-      const gastado = compras.reduce((a,s)=>a+(s.total||0),0);
-      const uds     = compras.reduce((a,s)=>a+(s.qty||0),0);
+      // 💰 Facturado = sólo lo CONFIRMADO; las unidades son las que siguen vendidas
+      const gastado = compras.reduce((a,s)=>a+ingresoDe(s),0);
+      const uds     = compras.reduce((a,s)=>a+unidadesContadas(s),0);
       const fechas  = compras.map(s=>s.date).filter(Boolean).sort();
-      return { c, compras, gastado, uds, n:compras.length, ult:fechas[fechas.length-1]||"", primera:fechas[0]||"" };
+      return { c, compras, gastado, uds, n:compras.length, nConf:confirmadas(compras).length, ult:fechas[fechas.length-1]||"", primera:fechas[0]||"" };
     })
     .sort((a,b)=> (b.gastado - a.gastado) || String(a.c.name).localeCompare(String(b.c.name)));
   const totalGastado = fichas.reduce((a,f)=>a+f.gastado,0);
@@ -1189,7 +1210,9 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
   const guardar = () => {
     const n = String((form && form.name) || "").trim();
     if (!n) { showToast("⚠️ El nombre del cliente es obligatorio"); return; }
-    const limpio = { name:n, city:String(form.city||"").trim(), phone:String(form.phone||"").trim(), email:String(form.email||"").trim(), notes:String(form.notes||"").trim() };
+    const limpio = { name:n, city:String(form.city||"").trim(), phone:String(form.phone||"").trim(), email:String(form.email||"").trim(), notes:String(form.notes||"").trim(),
+                     // 🧲 fuente de adquisición (cómo llegó) y canal de compra (dónde compra)
+                     attribution: form.attribution || "", channel: form.channel || "" };
     if (form.id) {
       setCustomers(prev => prev.map(x => String(x.id)===String(form.id) ? { ...x, ...limpio } : x));
       showToast("✅ Cliente actualizado");
@@ -1217,7 +1240,7 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
     <div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
           <div style={{ fontWeight:900, fontSize:isMobile?19:20 }}>👥 Clientes (CRM)</div>
-          <button className="btn-main" onClick={()=>setForm({ name:"", city:"", phone:"", email:"", notes:"" })} style={{ padding:"9px 14px", fontSize:13, whiteSpace:"nowrap" }}>+ Nuevo cliente</button>
+          <button className="btn-main" onClick={()=>setForm({ name:"", city:"", phone:"", email:"", notes:"", attribution:"", channel:"" })} style={{ padding:"9px 14px", fontSize:13, whiteSpace:"nowrap" }}>+ Nuevo cliente</button>
         </div>
         <div style={{ fontSize:12.5, color:C.muted, fontWeight:700, marginBottom:14 }}>
           {customers.length} cliente{customers.length===1?"":"s"} · {totalCompras} compra{totalCompras===1?"":"s"} · {fmt(totalGastado)} facturados
@@ -1234,6 +1257,19 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
             </div>
             {campo("email","✉️ Correo (opcional)",{ inputMode:"email" })}
             <textarea className="stk-input" placeholder="📝 Notas: tallas que usa, gustos, avisos…" rows={2} style={{ resize:"vertical" }} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
+            {/* 🧲 De dónde salió el cliente ≠ por dónde compra (son cosas distintas) */}
+            <div>
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>🧲 Fuente — ¿cómo te encontró? (opcional)</div>
+              <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+                {ATRIBUCIONES.map(a=><button key={a.id} className={`filter-btn ${form.attribution===a.id?"active":""}`} onClick={()=>setForm(f=>({...f,attribution:f.attribution===a.id?"":a.id}))}>{a.emoji} {a.label}</button>)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>🛍️ Canal de compra — ¿dónde suele comprar? (opcional)</div>
+              <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+                {CANALES_COMPRA.map(c=><button key={c.id} className={`filter-btn ${form.channel===c.id?"active":""}`} onClick={()=>setForm(f=>({...f,channel:f.channel===c.id?"":c.id}))}>{c.label}</button>)}
+              </div>
+            </div>
             <div style={{ display:"flex", gap:8 }}>
               <button className="btn-outline" onClick={()=>setForm(null)} style={{ flex:1 }}>Cancelar</button>
               <button className="btn-main" onClick={guardar} style={{ flex:2 }}>Guardar</button>
@@ -1264,8 +1300,10 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
                     {f.c.email && <span>✉️ {f.c.email}</span>}
                   </div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
-                    <span className="pill" style={{ background:C.greenLight, color:C.green }}>{f.n} compra{f.n===1?"":"s"}</span>
-                    <span className="pill" style={{ background:C.yellowLight, color:C.yellow }}>{fmt(f.gastado)}</span>
+                    <span className="pill" style={{ background:C.greenLight, color:C.green }} title="Compras registradas">{f.n} compra{f.n===1?"":"s"}{f.nConf!==f.n?` · ${f.nConf} confirmadas`:""}</span>
+                    <span className="pill" style={{ background:C.yellowLight, color:C.yellow }} title="Sólo lo confirmado (Entregado y cobrado)">{fmt(f.gastado)}</span>
+                    {f.c.attribution && <span className="pill" style={{ background:"#EEF2FF", color:"#4338CA" }} title="Fuente de adquisición">🧲 {(ATRIBUCIONES.find(a=>a.id===f.c.attribution)||{}).label||f.c.attribution}</span>}
+                    {f.c.channel && <span className="pill" style={{ background:C.bg, color:C.muted }} title="Canal de compra">🛍️ {(CANALES_COMPRA.find(x=>x.id===f.c.channel)||{}).label||f.c.channel}</span>}
                     {f.ult && <span className="pill" style={{ background:C.bg, color:C.muted }}>Última: {f.ult}</span>}
                     {f.primera && <span className="pill" style={{ background:C.bg, color:C.muted }}>1ª: {f.primera}</span>}
                   </div>
@@ -1276,7 +1314,7 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
                 <button className="filter-btn" onClick={()=>setAbierto(abi?null:String(f.c.id))} style={{ flex:1, borderColor:abi?C.blue:undefined, color:abi?C.blue:undefined }}>
                   🧾 {abi ? "Ocultar compras" : (f.n ? `Ver sus ${f.n} compra${f.n===1?"":"s"}` : "Ver compras")}
                 </button>
-                <button className="filter-btn" title="Editar cliente" onClick={()=>setForm({ id:String(f.c.id), name:f.c.name, city:f.c.city, phone:f.c.phone, email:f.c.email, notes:f.c.notes })}>✏️</button>
+                <button className="filter-btn" title="Editar cliente" onClick={()=>setForm({ id:String(f.c.id), name:f.c.name, city:f.c.city, phone:f.c.phone, email:f.c.email, notes:f.c.notes, attribution:f.c.attribution||"", channel:f.c.channel||"" })}>✏️</button>
                 <button className="filter-btn" title="Eliminar cliente" onClick={()=>borrar(f.c)} style={{ color:C.red }}>🗑️</button>
               </div>
               {abi && (
@@ -1288,10 +1326,13 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
                       <div key={s.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid "+C.border+"60" }}>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontWeight:800, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p?.name||"Producto"}</div>
-                          <div style={{ fontSize:11, color:C.muted, fontWeight:700 }}>{s.date} · {p?`${p.color||"–"}/T${p.size||"–"}`:""} · {s.method}{s.discount>0 && <span style={{ color:C.red, fontWeight:900 }}> · 🏷️ −{fmt(s.discount)}</span>}</div>
+                          <div style={{ fontSize:11, color:C.muted, fontWeight:700, display:"flex", gap:5, flexWrap:"wrap", alignItems:"center", marginTop:2 }}>
+                            <span>{s.date} · {p?`${p.color||"–"}/T${p.size||"–"}`:""} · {s.method}{s.discount>0 && <span style={{ color:C.red, fontWeight:900 }}> · 🏷️ −{fmt(s.discount)}</span>}</span>
+                            <span className="pill" style={{ background:estadoDe(s).bg, color:estadoDe(s).color, fontSize:10, padding:"2px 7px", fontWeight:900 }} title={estadoDe(s).label}>{estadoDe(s).emoji} {estadoDe(s).label}</span>
+                          </div>
                         </div>
                         <div style={{ fontSize:12, fontWeight:800, color:C.muted, flexShrink:0 }}>×{s.qty}</div>
-                        <div style={{ fontWeight:900, fontSize:13.5, color:C.green, flexShrink:0, minWidth:72, textAlign:"right" }}>{fmt(s.total)}</div>
+                        <div style={{ fontWeight:900, fontSize:13.5, color:esConfirmada(s)?C.green:C.muted, flexShrink:0, minWidth:72, textAlign:"right" }} title={esConfirmada(s)?"Contado como ingreso":"Todavía no es ingreso (pendiente)"}>{esConfirmada(s)?fmt(ingresoDe(s)):fmt(s.total)}</div>
                       </div>
                     );
                   })}
@@ -1491,6 +1532,8 @@ export default function Stokly() {
   });
   const width = useWindowWidth();
   const isMobile = width < 768;
+  // 📲 PWA: botón "Instalar app" en el menú de usuario
+  const { instalada, instalar } = useInstalable();
 
   // ── Panel activo (el propio o uno compartido por invitación) ──
   const wsReady = !!user && (mStatus === "ready" || mStatus === "error");
@@ -1564,7 +1607,10 @@ export default function Stokly() {
   }
 
   const lowStock = products.filter(p => p.stock <= p.minStock);
-  const totalSales = sales.reduce((a,s) => a+s.total, 0);
+  // 💰 INGRESO CONFIRMADO: sólo cuenta lo "Entregado y cobrado".
+  //    Lo pendiente de envío/cobro NO entra hasta que se confirme
+  //    (las ventas viejas migraron como entregadas → nada cambia).
+  const totalSales = sales.reduce((a,s) => a + ingresoDe(s), 0);
   const totalExpenses = expenses.reduce((a,e) => a+e.amount, 0);
   const profit = totalSales - totalExpenses;
   // 📱 Clientes (CRM) entra como sección de la plataforma (no como ventana flotante)
@@ -1649,6 +1695,18 @@ export default function Stokly() {
                     >
                       👥 Equipo
                     </button>
+                    {!instalada && (
+                      <button
+                        onClick={() => {
+                          setUserMenu(false);
+                          instalar().then(r => { if (r === "sin-prompt") window.alert(INSTRUCCIONES_INSTALAR); });
+                        }}
+                        title="Instalar stokly en tu celular o computador (abre como aplicación)"
+                        style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                      >
+                        📲 Instalar app
+                      </button>
+                    )}
                     <button
                       onClick={() => { setUserMenu(false); if (window.confirm("¿Cerrar sesión?")) signOut(); }}
                       style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.red, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
@@ -1666,7 +1724,7 @@ export default function Stokly() {
         <div className="page-content">
           {tab==="home"      && <Home      products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} lowStock={lowStock} setTab={setTab} setModal={setModal} isMobile={isMobile} />}
           {tab==="inventory" && <Inventory products={products} setProducts={setProducts} lowStock={lowStock} showToast={showToast} setModal={setModal} setImportView={setImportView} isMobile={isMobile} workspaceId={workspaceId} />}
-          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} customers={customers} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} />}
+          {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} customers={customers} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} user={user} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
           {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
@@ -1750,7 +1808,7 @@ export default function Stokly() {
         setModal(null);
         showToast(`✅ ${newP.length} importados${autoN?` · 🏷️ ${autoN} con código nuevo`:""}${precioN?` · 💲 ${precioN} precio${precioN>1?"s":""} actualizado${precioN>1?"s":""}`:""}${fotoN?` · 📷 foto agregada a ${fotoN} existentes`:""}${aviso?` · ⚠️ ${aviso}`:""}`);
       }} />}
-      {modal==="sale"    && <AddSaleModal   products={products} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); const porProd = {}; arr.forEach(s => { if (s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)]||0) + (s.qty||0); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; return q ? {...p, stock:p.stock-q, sold:p.sold+q} : p; })); setModal(null); showToast("💰 Venta: "+fmt(arr.reduce((a,s)=>a+(s.total||0),0))); }} />}
+      {modal==="sale"    && <AddSaleModal   products={products} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setModal(null)} onSave={(r) => { const arr = Array.isArray(r) ? r : [r]; setSales(prev=>[...prev, ...arr]); /* 📦 El stock se descuenta UNA sola vez al registrar (sirve como reserva) — para pagadas y contraentrega. El contador de "vendido" sólo crece con lo CONFIRMADO: una contraentrega pendiente aún no es venta ni ingreso. */ const porProd = {}; arr.forEach(s => { if (s.productId == null) return; const k = String(s.productId); if (!porProd[k]) porProd[k] = { stock:0, sold:0 }; porProd[k].stock += (s.qty||0); porProd[k].sold += unidadesContadas(s); }); setProducts(prev=>prev.map(p => { const q = porProd[String(p.id)]; if (!q || (!q.stock && !q.sold)) return p; return {...p, stock:p.stock-q.stock, sold:Math.max(0, p.sold+q.sold)}; })); setModal(null); const bruto = arr.reduce((a,s)=>a+(s.total||0),0); const hayPend = arr.some(s=>esPendienteDeCobro(s)); showToast(hayPend ? `📦 Venta: ${fmt(bruto)} · ⏳ pendiente de cobro` : `💰 Venta: ${fmt(bruto)}`); }} />}
       {modal==="expense" && <AddExpenseModal onClose={() => setModal(null)} onSave={e => { setExpenses(prev=>[...prev,e]); setModal(null); showToast("💸 Gasto registrado"); }} />}
       {modal==="negocio" && <NegocioModal negocio={negocio} workspaceId={workspaceId} onClose={() => setModal(null)} onGuardar={guardarNegocio} showToast={showToast} />}
       {modal==="team"    && <TeamModal      user={user} activeWs={workspaceId} isOwner={isOwner} onClose={() => setModal(null)} showToast={showToast} onChanged={refreshMemberships} />}
@@ -1763,15 +1821,24 @@ export default function Stokly() {
 // Cuando se BORRA una venta (devolución), el inventario se reajusta solo:
 // las unidades vuelven al stock y se baja el contador de "vendido" del producto.
 function aplicarDevolucion(setProducts, ventasBorradas) {
-  const porProd = {};
+  // 📦 Regresa al producto SÓLO lo que estaba reservado o contado:
+  //    · una venta CANCELADA ya devolvió su stock (no se devuelve dos veces)
+  //    · una venta PENDIENTE nunca sumó al contador de "vendido"
+  //    · una DEVUELTO parcial ya descontó sus unidades
+  const agg = {};
   (ventasBorradas || []).forEach(s => {
-    if (s && s.productId != null) porProd[String(s.productId)] = (porProd[String(s.productId)] || 0) + (s.qty || 0);
+    if (!s || s.productId == null) return;
+    const k = String(s.productId);
+    const d = deltasBorrado(s);
+    if (!agg[k]) agg[k] = { stock: 0, sold: 0 };
+    agg[k].stock += d.stock;
+    agg[k].sold  += d.sold;
   });
-  if (!Object.keys(porProd).length) return;
+  if (!Object.keys(agg).length) return;
   setProducts(prev => prev.map(p => {
-    const q = porProd[String(p.id)];
-    if (!q) return p;
-    return { ...p, stock: (p.stock || 0) + q, sold: Math.max(0, (p.sold || 0) - q) };
+    const a = agg[String(p.id)];
+    if (!a || (!a.stock && !a.sold)) return p;
+    return { ...p, stock: (p.stock || 0) + a.stock, sold: Math.max(0, (p.sold || 0) + a.sold) };
   }));
 }
 
@@ -1779,19 +1846,26 @@ function aplicarDevolucion(setProducts, ventasBorradas) {
 //    Si cambia de referencia/color/talla o de cantidad, el producto VIEJO
 //    recupera sus unidades y el NUEVO las descuenta (delta = unidades vendidas).
 function aplicarCambioVenta(setProducts, vieja, nueva) {
-  const delta = {};
-  const sumar = (pid, q, signo) => {
-    if (pid == null || !q) return;
-    const k = String(pid);
-    delta[k] = (delta[k] || 0) + signo * q;
-  };
-  if (vieja) sumar(vieja.productId, vieja.qty || 0, -1);
-  if (nueva) sumar(nueva.productId, nueva.qty || 0, +1);
-  if (!Object.keys(delta).length) return;
+  if (!vieja || !nueva) return;
+  const dStock = {}, dSold = {};
+  const add = (map, pid, v) => { if (pid == null || !v) return; const k = String(pid); map[k] = (map[k] || 0) + v; };
+  const cancelV = vieja.status === "cancelado";
+  const cancelN = nueva.status === "cancelado";
+  // STOCK: cada venta reserva sus unidades mientras NO esté cancelada.
+  //    (mover la referencia = el viejo libera y el nuevo reserva)
+  if (!cancelV) add(dStock, vieja.productId, -(vieja.qty || 0));
+  if (!cancelN) add(dStock, nueva.productId, +(nueva.qty || 0));
+  // VENDIDO: sólo lo que DEBE estar contado (confirmado − devuelto)
+  add(dSold, vieja.productId, -unidadesContadas(vieja));
+  add(dSold, nueva.productId, +unidadesContadas(nueva));
+  const aplicar = {};
+  Object.keys(dStock).forEach(k => { aplicar[k] = { stock: dStock[k] || 0, sold: dSold[k] || 0 }; });
+  Object.keys(dSold).forEach(k => { if (!aplicar[k]) aplicar[k] = { stock: 0, sold: dSold[k] }; });
+  if (!Object.keys(aplicar).length) return;
   setProducts(prev => prev.map(p => {
-    const d = delta[String(p.id)];
-    if (!d) return p;
-    return { ...p, stock: Math.max(0, (p.stock || 0) - d), sold: Math.max(0, (p.sold || 0) + d) };
+    const a = aplicar[String(p.id)];
+    if (!a || (!a.stock && !a.sold)) return p;
+    return { ...p, stock: Math.max(0, (p.stock || 0) - a.stock), sold: Math.max(0, (p.sold || 0) + a.sold) };
   }));
 }
 
@@ -1800,11 +1874,13 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
   const [rango, setRango] = useState({ id:"todo" });
   const sF = sales.filter(s => enRango(s.date, rango));
   const eF = expenses.filter(e => solapaRango(e, rango));
-  const totalSR = sF.reduce((a,s) => a + s.total, 0);
+  const totalSR = sF.reduce((a,s) => a + ingresoDe(s), 0);
   const totalER = eF.reduce((a,e) => a + e.amount, 0);
   const profitR = totalSR - totalER;
+  // 🕓 Lo que todavía no es ingreso (contraentregas sin confirmar)
+  const pendR = ingresosPendientes(sF);
   const unidadesR = {};
-  sF.forEach(s => { unidadesR[s.productId] = (unidadesR[s.productId] || 0) + (s.qty || 0); });
+  sF.forEach(s => { unidadesR[s.productId] = (unidadesR[s.productId] || 0) + unidadesContadas(s); });
   // 📌 Fuente de verdad = las ventas registradas (si borras una, baja al instante)
   const vendidos = (p) => (unidadesR[p.id] || 0);
   const top5 = [...products].sort((a,b) => vendidos(b) - vendidos(a)).slice(0,5);
@@ -1823,6 +1899,14 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
             </div>
           ))}
         </div>
+        {/* 🕓 Dinero que todavía NO es ingreso (no se mezcla con lo cobrado) */}
+        {pendR > 0 && (
+          <div style={{ marginTop:14, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", background:"rgba(255,255,255,0.2)", borderRadius:14, padding:"10px 14px" }}>
+            <span style={{ fontSize:15 }}>🕓</span>
+            <span style={{ fontWeight:900, fontSize:14 }}>{fmt(pendR)} por cobrar</span>
+            <span style={{ fontSize:12, fontWeight:700, opacity:0.9 }}>· contraentregas sin confirmar: no entran como ingreso</span>
+          </div>
+        )}
       </div>
 
       {/* KPIs */}
@@ -1830,7 +1914,7 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
         {[
           { label:"Unidades en stock", value:products.reduce((a,p)=>a+p.stock,0), color:C.blue,   bg:C.blueLight,   emoji:"📦" },
           { label:"Referencias",       value:products.length,                      color:C.purple, bg:C.purpleLight, emoji:"🏷️" },
-          { label: rango.id==="todo" ? "Unidades vendidas" : "Vendidas en el rango", value: sF.reduce((a,s)=>a+(s.qty||0),0), color:C.green,  bg:C.greenLight,  emoji:"💰" },
+          { label: rango.id==="todo" ? "Unidades vendidas" : "Vendidas en el rango", value: sF.reduce((a,s)=>a+unidadesContadas(s),0), color:C.green,  bg:C.greenLight,  emoji:"💰" },
           { label:"Alertas de stock",  value:lowStock.length,                      color:lowStock.length?C.red:C.green, bg:lowStock.length?C.redLight:C.greenLight, emoji:"⚠️" },
         ].map(k=>(
           <div key={k.label} className="stat-card" style={{ background:k.bg }}>
@@ -2443,12 +2527,20 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
 }
 
 // ── SALES ─────────────────────────────────────────────────────────────────────
-function Sales({ sales, setSales, products, customers, setProducts, totalSales, isMobile, showToast }) {
+function Sales({ sales, setSales, products, customers, setProducts, totalSales, isMobile, showToast, user }) {
   const [rango, setRango] = useState({ id:"todo" });
   const [edit, setEdit] = useState(null); // ✏️ venta abierta para corregir
+  const [filtro, setFiltro] = useState("todo");      // ⬇️ filtra por estado del pedido
+  const [devolver, setDevolver] = useState(null);    // ↩️ renglón abierto para devolver
   const ventasR = sales.filter(s => enRango(s.date, rango));
-  const totalR = ventasR.reduce((a,s)=>a+s.total,0);
-  const byMethod = ventasR.reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+s.total;return acc;},{});
+  // 💰 El gran total es lo COBRADO de verdad (confirmado). Lo pendiente
+  //    se muestra aparte para que nunca se confunda con ingreso.
+  const totalR = ventasR.reduce((a,s)=>a+ingresoDe(s),0);
+  const pendR  = ingresosPendientes(ventasR);
+  const devueltasR = ventasR.reduce((a,s)=>a+(Number(s.returnedAmount)||0),0);
+  const byMethod = confirmadas(ventasR).reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+ingresoDe(s);return acc;},{});
+  // ⬇️ Filtrado por estado (todo / pendiente / enviado / entregado / …)
+  const listaR = filtro === "todo" ? ventasR : ventasR.filter(s => (s.status || "entregado") === filtro);;
   // 🧾 Cuántas referencias formaron la venta de la que viene cada renglón
   const porGrupo = {};
   ventasR.forEach(s => { const k = grupoVenta(s.id); porGrupo[k] = (porGrupo[k] || 0) + 1; });
@@ -2468,6 +2560,91 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
     setEdit(null);
     showToast("✏️ Venta actualizada");
   };
+
+  // ── 📦 CICLO DE VIDA DEL PEDIDO ────────────────────────────────────────
+  // Un pedido con varias referencias vive en varias filas con el MISMO
+  // prefijo de id (uuid::1, uuid::2, …). Cualquier acción de estado se
+  // aplica a TODAS sus filas para que nunca queden a medias.
+  const filasDe = (g) => sales.filter(x => grupoVenta(x.id) === g);
+
+  const aplicarTransicion = (filas, nuevas, extraStock = {}) => {
+    const agg = {};
+    filas.forEach((f, i) => {
+      const d = deltasProducto(f, nuevas[i]);
+      const k = f.productId == null ? null : String(f.productId);
+      if (k) {
+        if (!agg[k]) agg[k] = { stock: 0, sold: 0 };
+        agg[k].stock += d.stock + (extraStock[String(f.productId)] || 0);
+        agg[k].sold  += d.sold;
+      }
+    });
+    setSales(prev => prev.map(x => {
+      const i = filas.findIndex(f => String(f.id) === String(x.id));
+      return i >= 0 ? nuevas[i] : x;
+    }));
+    setProducts(prev => prev.map(p => {
+      const a = agg[String(p.id)];
+      if (!a || (!a.stock && !a.sold)) return p;
+      return { ...p, stock: Math.max(0, (p.stock || 0) + a.stock), sold: Math.max(0, (p.sold || 0) + a.sold) };
+    }));
+  };
+
+  // Cambia el estado de UN pedido (todas sus referencias)
+  const cambiarEstado = (g, estado, extra) => {
+    const filas = filasDe(g);
+    if (!filas.length) return;
+    const actual = filas[0].status || "entregado";
+    if (actual === estado) { showToast(`ℹ️ El pedido ya está en "${estadoDe(filas[0]).label}"`); return; }
+    const ahora = new Date().toISOString();
+    const nuevas = filas.map(f => {
+      const est = f.status || "entregado";
+      // ❌ Canceladas y ↩️ devueltas NO se arrastran: ya devolvieron su stock
+      //    y su dinero, cambiarles el estado duplicaría cantidades.
+      if (est === "devuelto" || est === "cancelado") return f;
+      return { ...f, ...(extra ? extra(f, ahora) : {}), status: estado };
+    });
+    if (nuevas.every((n, i) => n === filas[i])) { showToast("ℹ️ Nada que cambiar en ese pedido"); return; }
+    aplicarTransicion(filas, nuevas);
+    const cambia = nuevas.find((n, i) => n !== filas[i]);
+    showToast(`${estadoDe(cambia).emoji} Pedido → ${estadoDe(cambia).label}`);
+  };
+
+  // ✅ CONFIRMAR RECIBIDO — idempotente: si ya estaba confirmado no hace nada
+  //    (ni descuenta stock otra vez, ni duplica el ingreso, ni duplica "vendido")
+  const confirmarRecibido = (g) => {
+    const filas = filasDe(g);
+    if (!filas.length) return;
+    if (filas.every(f => esConfirmada(f) && f.confirmedAt)) { showToast("✅ Ya estaba confirmado"); return; }
+    cambiarEstado(g, "entregado", (f, ahora) => ({
+      confirmedAt: f.confirmedAt || ahora,
+      confirmedBy: f.confirmedBy || (user && user.id) || null,
+    }));
+  };
+
+  // ↩️ REGISTRAR DEVOLUCIÓN — sólo de ESTA referencia y sólo lo que aún no
+  //    se devolvió. El registro original queda y sólo se le suman los datos.
+  const aplicarDevolucionRenglon = (fila, unidades, tipo) => {
+    const u = Math.round(Number(unidades) || 0);
+    const ya = Number(fila.returnedQty) || 0;
+    const max = (Number(fila.qty) || 0) - ya;
+    if (!(u > 0)) { showToast("⚠️ Indica cuántas unidades se devuelven"); return; }
+    if (u > max) { showToast(`⚠️ Sólo quedan ${max} unidades por devolver`); return; }
+    const precioU = (Number(fila.total) || 0) / Math.max(1, Number(fila.qty) || 1);
+    const nueva = {
+      ...fila,
+      returnedQty: ya + u,
+      returnedAmount: (Number(fila.returnedAmount) || 0) + u * precioU,
+      returnType: tipo || fila.returnType || "",
+      returnedAt: new Date().toISOString(),
+      returnedBy: (user && user.id) || fila.returnedBy || null,
+      status: (ya + u) >= (Number(fila.qty) || 1) ? "devuelto" : (fila.status || "entregado"),
+    };
+    // El producto recupera las unidades físicas + baja del contador de vendido
+    aplicarTransicion([fila], [nueva], { [String(fila.productId)]: u });
+    setDevolver(null);
+    showToast(`↩️ ${u} uds. devueltas · ${fmt(u * precioU)} fuera de ingresos`);
+  };
+
   // ⬇️ Descarga las ventas DEL RANGO elegido en Excel (.xlsx)
   function descargarVentas() {
     if (!ventasR.length) { showToast("📭 No hay ventas en este rango"); return; }
@@ -2476,10 +2653,12 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
       "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
       () => {
         try {
-          const cab = ["fecha","sku","producto","color","talla","cantidad","método","descuento","total"];
+          const cab = ["fecha","sku","producto","color","talla","cantidad","método","descuento","total","estado","modalidad","atribución","canal de compra","devuelto uds","devuelto $"];
           const filas = ventasR.map(s => {
             const p = products.find(x => x.id === s.productId);
-            return [s.date, p?.sku || "", p?.name || "Producto", p?.color || "", p?.size || "", s.qty, s.method, s.discount || 0, s.total];
+            return [s.date, p?.sku || "", p?.name || "Producto", p?.color || "", p?.size || "", s.qty, s.method, s.discount || 0, s.total,
+                    estadoDe(s).label, modalidadDe(s).label, etiquetaAtribucion(s), etiquetaCanal(s) || "—",
+                    s.returnedQty || 0, Math.round(s.returnedAmount || 0)];
           });
           const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
           ws["!cols"] = cab.map((h, i) => {
@@ -2497,6 +2676,8 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
     );
   }
   const colors = { Efectivo:[C.green,C.greenLight], Tarjeta:[C.blue,C.blueLight], Nequi:[C.purple,C.purpleLight], Transferencia:[C.orange,C.orangeLight], Daviplata:[C.red,C.redLight] };
+  // Estilo base de los botones de estado del pedido
+  const btnAccion = (bg, color) => ({ background:bg, color, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" });
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ display:"flex", gap:10, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
@@ -2504,8 +2685,26 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
         <button onClick={descargarVentas} title="Descargar las ventas del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
       </div>
       <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
-        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total histórico":"Total · "+rangoLabel(rango)}</div>
+        <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total histórico":"Total · "+rangoLabel(rango)} · 💰 cobrado</div>
         <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
+        {/* 💰 Lo que todavía NO es ingreso, aparte y bien visible */}
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+          <span className="pill" style={{ background:"rgba(255,255,255,.2)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }}>✅ {ventasR.filter(esConfirmada).length} confirmadas</span>
+          <span className="pill" style={{ background:pendR>0?"#FEF3C7":"rgba(255,255,255,.14)", color:pendR>0?"#B45309":"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Ventas todavía no entregadas/cobradas: NO cuentan como ingreso">🕓 {fmt(pendR)} pendiente</span>
+          {devueltasR>0 && <span className="pill" style={{ background:"rgba(255,255,255,.14)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Dinero devuelto dentro de ventas confirmadas">↩️ {fmt(devueltasR)} devueltos</span>}
+        </div>
+      </div>
+      {/* ⬇️ Filtrar por estado del pedido */}
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+        {[{ id:"todo", label:"Todo", emoji:"📋", color:C.text }, ...ESTADOS].map(e=>{
+          const n = e.id==="todo" ? ventasR.length : ventasR.filter(s=>(s.status||"entregado")===e.id).length;
+          const on = filtro===e.id;
+          return <button key={e.id} onClick={()=>setFiltro(e.id)} title={`Ver sólo ${e.label}`}
+            style={{ background:on?e.color:C.white, color:on?"white":e.color, border:"1.5px solid "+(on?"transparent":C.border),
+                     borderRadius:999, padding:"7px 13px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+            {e.emoji} {e.label} · {n}
+          </button>;
+        })}
       </div>
       <div className="grid-4">
         {Object.entries(byMethod).map(([m,total])=>{const[color,bg]=colors[m]||[C.muted,C.bg];return <div key={m} className="stat-card" style={{ background:bg }}><div style={{ fontSize:12,fontWeight:800,color,marginBottom:4 }}>{m}</div><div style={{ fontSize:20,fontWeight:900 }}>{fmt(total)}</div><div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{pct(total,totalR)}%</div></div>;})}
@@ -2518,13 +2717,20 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
           )}
         </div>
         {/* 🧾 CADA venta/referencia en SU propio cuadro, con toda la info y su 🗑️ */}
-        {[...ventasR].reverse().map(s=>{
+        {[...listaR].reverse().map(s=>{
           const p0=products.find(x=>String(x.id)===String(s.productId));
           const cli=(customers||[]).find(c=>String(c.id)===String(s.customerId));
           const nRef=porGrupo[grupoVenta(s.id)]||1;
           const mismaVenta=String(s.id).includes("::")&&nRef>1;
           const precioU=s.qty>0?Math.round((s.total||0)/s.qty):(s.total||0);
           const[mColor,mBg]=colors[s.method]||[C.muted,C.bg];
+          // 📦 estado del pedido, modalidad y atribución (los muestra la misma fila)
+          const est=estadoDe(s); const st=s.status||"entregado";
+          const mod=modalidadDe(s); const g=grupoVenta(s.id);
+          // Las acciones de ESTADO se muestran sólo en el primer renglón del
+          // pedido, para que un pedido de 3 referencias no repita 3 veces.
+          const esPrimera=!String(s.id).includes("::")||String(s.id).endsWith("::1");
+          const atrib=etiquetaAtribucion(s); const canal=etiquetaCanal(s);
           const borrar=()=>{
             const linea=`${p0?.name||"Producto"}${p0?` · ${p0.color||"–"}/${p0.size||"–"}`:""}`;
             if(!window.confirm(`↩️ ¿Eliminar esta venta (devolución)?\n\n${linea}\n${s.qty} ud${s.qty===1?"":"s"} · ${fmt(s.total)} · ${s.date}\n\nSe borrará PERMANENTEMENTE.\n\n✅ Las ${s.qty} ud${s.qty===1?"":"s"} VUELVEN al inventario y las métricas se ajustan solas.`)) return;
@@ -2549,9 +2755,19 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                   <span className="pill" style={{ background:mBg, color:mColor, fontSize:10.5, padding:"3px 9px" }}>{s.method}</span>
                   {mismaVenta&&<span className="pill" style={{ background:C.bg, color:C.muted, fontSize:10.5, padding:"3px 9px" }} title="Esta venta se registró junto con otras referencias">🔗 {nRef} refs</span>}
                 </div>
+                {/* 📦 Estado del pedido · 💵 modalidad · 🧲 de dónde salió la venta */}
+                <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:5, display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                  <span className="pill" style={{ background:est.bg, color:est.color, fontSize:10.5, padding:"3px 9px", fontWeight:900 }} title={st==="entregado"&&s.confirmedAt?`Confirmado el ${String(s.confirmedAt).slice(0,10)}`:est.label}>{est.emoji} {est.label}</span>
+                  <span className="pill" style={{ background:C.bg, color:C.text, fontSize:10.5, padding:"3px 9px" }} title="Modalidad de pago">{mod.emoji} {mod.label}</span>
+                  <span className="pill" style={{ background:atrib==="Sin atribuir"?C.bg:"#EEF2FF", color:atrib==="Sin atribuir"?C.muted:"#4338CA", fontSize:10.5, padding:"3px 9px" }} title="Fuente de adquisición (de dónde vino el cliente)">🧲 {atrib}</span>
+                  {canal&&<span className="pill" style={{ background:C.bg, color:C.muted, fontSize:10.5, padding:"3px 9px" }} title="Canal de compra (dónde se concretó)">🛍️ {canal}</span>}
+                  {(s.returnedQty>0)&&<span className="pill" style={{ background:C.redLight, color:C.red, fontSize:10.5, padding:"3px 9px" }} title="Unidades devueltas de ESTA venta">↩️ {s.returnedQty} ud{s.returnedQty===1?"":"s"} devueltas</span>}
+                </div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
-                <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:C.green }}>{fmt(s.total)}</div>
+                <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:esConfirmada(s)?C.green:C.muted }}>{esConfirmada(s)?fmt(ingresoDe(s)):fmt(s.total)}</div>
+                {!esConfirmada(s) && <div style={{ fontSize:11, fontWeight:900, color:"#B45309", textAlign:"right", marginTop:-4 }} title="Todavía no es ingreso">⏳ sin cobrar</div>}
+                {s.returnedQty>0 && <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", marginTop:-4 }}>↩️ −{fmt(s.returnedAmount||0)}</div>}
                 {s.discount>0 && (
                   <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", lineHeight:1.35, marginTop:-4 }}>
                     🏷️ Rebaja −{fmt(s.discount)}
@@ -2559,6 +2775,12 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                   </div>
                 )}
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                  {/* 📦 Acciones del PEDIDO (una sola vez por pedido) */}
+                  {esPrimera&&st==="pendiente"&&<button title="Marcar el pedido como enviado a la mensajería" onClick={()=>cambiarEstado(g,"enviado")} style={btnAccion("#DBEAFE","#2563EB")}>🚚 Enviado</button>}
+                  {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Confirmar que el cliente recibió y pagó — no vuelve a descontar stock ni duplica el ingreso" onClick={()=>confirmarRecibido(g)} style={btnAccion("#D1FAE5","#047857")}>✅ Confirmar recibido</button>}
+                  {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Cancelar el pedido: el stock regresa y NO cuenta como ingreso" onClick={()=>{ if(window.confirm("❌ ¿Cancelar este pedido?\n\nEl stock vuelve al inventario y deja de contar como ingreso.")) cambiarEstado(g,"cancelado"); }} style={btnAccion(C.redLight,C.red)}>❌ Cancelar</button>}
+                  {esPrimera&&st==="entregado"&&<button title="Registrar devolución de esta referencia (parcial o total)" onClick={()=>setDevolver(s)} style={btnAccion("#FEF3C7","#B45309")}>↩️ Devolución</button>}
+                  {esPrimera&&st==="cancelado"&&<button title="Reabrir el pedido" onClick={()=>cambiarEstado(g, s.modality==="contraentrega"?"pendiente":"entregado")} style={btnAccion(C.bg,C.text)}>🔄 Reabrir</button>}
                   <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
                   <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
                 </div>
@@ -2566,7 +2788,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
             </div>
           );
         })}
-        {ventasR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>Sin ventas en este rango 📅</div>}
+        {listaR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>{ventasR.length===0 ? "Sin ventas en este rango 📅" : "Ningún pedido en este estado 🔍"}</div>}
       </div>
       {/* ✏️ Corregir una venta ya registrada */}
       {edit && (
@@ -2576,6 +2798,15 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
           customers={customers}
           onClose={() => setEdit(null)}
           onSave={guardarEdicion}
+        />
+      )}
+      {/* ↩️ Registrar devolución (parcial o total) de una referencia */}
+      {devolver && (
+        <DevolucionModal
+          venta={devolver}
+          producto={products.find(x => String(x.id) === String(devolver.productId))}
+          onClose={() => setDevolver(null)}
+          onConfirm={(n, tipo) => aplicarDevolucionRenglon(devolver, n, tipo)}
         />
       )}
     </div>
@@ -2596,8 +2827,9 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
       "❌ No se pudo cargar el generador de Excel — revisa tu conexión",
       () => {
         try {
-          const cab = ["fecha","hasta","concepto","monto","categoría"];
-          const filas = gastosR.map(e => [e.date, e.dateEnd || "", e.concept, e.amount, e.category]);
+          const cab = ["fecha","hasta","concepto","monto","categoría","plataforma","campaña"];
+          const filas = gastosR.map(e => [e.date, e.dateEnd || "", e.concept, e.amount, e.category,
+            e.platform ? (PLATAFORMAS.find(x=>x.id===e.platform)?.label || e.platform) : "", e.campaign || ""]);
           const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
           ws["!cols"] = cab.map((h, i) => {
             let m = String(h).length;
@@ -2642,7 +2874,7 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
         {[...gastosR].reverse().map(e=>(
           <div key={e.id} className="row-item">
             <div style={{ width:38,height:38,background:C.orangeLight,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20 }}>{e.emoji}</div>
-            <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14 }}>{e.concept}</div><div style={{ fontSize:11,color:C.muted,fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}</div></div>
+            <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14 }}>{e.concept}</div><div style={{ fontSize:11,color:C.muted,fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}{e.platform?` · 📣 ${PLATAFORMAS.find(x=>x.id===e.platform)?.label||e.platform}`:""}{e.campaign?` · 🎯 ${e.campaign}`:""}</div></div>
             <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4 }}>
               <div style={{ fontWeight:900,fontSize:16,color:C.red }}>{fmt(e.amount)}</div>
               <button title="Eliminar (permanente)" onClick={()=>{ if(!window.confirm(`¿Eliminar el gasto "${e.concept}"?\n\nSe borrará PERMANENTEMENTE.`)) return; setExpenses(prev=>prev.filter(x=>x.id!==e.id)); showToast("🗑️ Gasto eliminado"); }} style={{ background:"none",border:"none",color:C.red,fontSize:11,cursor:"pointer",fontWeight:800,fontFamily:"inherit" }}>🗑️ Borrar</button>
@@ -2661,19 +2893,33 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
   const [rango, setRango] = useState({ id:"todo" });
   const sF = sales.filter(s => enRango(s.date, rango));
   const eF = expenses.filter(e => solapaRango(e, rango));
-  const totalSalesR = sF.reduce((a,s)=>a+s.total,0);
+  // 💰 Lo que SÍ es ingreso confirmado en este rango (nada de pendientes)
+  const sC = confirmadas(sF);
+  const pendientesR = ingresosPendientes(sF);
+  const devueltasR  = sF.reduce((a,s)=>a+(Number(s.returnedAmount)||0),0);
+  const totalSalesR = sC.reduce((a,s)=>a+ingresoDe(s),0);
   const totalExpensesR = eF.reduce((a,e)=>a+e.amount,0);
   const profitR = totalSalesR - totalExpensesR;
   const mktExp = eF.filter(e=>e.category==="Marketing").reduce((a,e)=>a+e.amount,0);
   const opExp  = eF.filter(e=>e.category==="Operacional").reduce((a,e)=>a+e.amount,0);
-  const cogs   = sF.reduce((a,s)=>{const p=products.find(x=>String(x.id)===String(s.productId));return a+(p?p.cost*s.qty:0);},0);
+  // El costo de la mercancía sale de las UNIDADES realmente confirmadas
+  // (las devueltas dejan de contar, se reconocen UNA sola vez)
+  const cogs   = sC.reduce((a,s)=>{const p=products.find(x=>String(x.id)===String(s.productId));return a+(p?p.cost*unidadesContadas(s):0);},0);
   const grossP = totalSalesR - cogs;
   // 🎯 Lo que queda DE VERDAD en el bolsillo: ventas − costo de la mercancía − gastos.
   //    (profitR es sólo caja: entradas − salidas; NO descuenta el costo de lo vendido)
   const gananciaNeta = grossP - totalExpensesR;
   const gMargin= pct(grossP,totalSalesR);
   const nMargin= pct(gananciaNeta,totalSalesR);
-  const cpa    = sF.length > 0 ? mktExp/sF.length : 0;
+  const cpa    = sC.length > 0 ? mktExp/sC.length : 0;
+  // ── 📣 Indicadores PUBLICITARIOS (nuevos; los de arriba NO cambian) ──
+  //    El gasto de Marketing se cuenta UNA sola vez: es el gasto ya registrado
+  //    en la pestaña Gastos (no se suma por cada venta).
+  const entregadas  = sC.filter(s => unidadesContadas(s) > 0);
+  const ingPubli    = sC.filter(s => s.attribution === "publicidad").reduce((a,s)=>a+ingresoDe(s),0);
+  const costoVentEnt = entregadas.length ? mktExp/entregadas.length : 0;   // costo por venta entregada
+  const roas        = mktExp > 0 ? ingPubli/mktExp : 0;                    // ROAS confirmado (veces)
+  const mer         = mktExp > 0 ? totalSalesR/mktExp : 0;                 // MER (veces)
   const fixed  = opExp + mktExp;
   const breakEven = gMargin > 0 ? (fixed/(gMargin/100)) : 0;
   const frozen = products.reduce((a,p)=>a+p.stock*p.cost,0);
@@ -2682,16 +2928,18 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
   const vendidasMap = {};
   for (const s of sF) {
     if (!s.qty || s.productId == null) continue;
+    const u = unidadesContadas(s);   // unidades CONFIRMADAS (las devueltas no cuentan)
+    if (!u) continue;
     const p = products.find(x => String(x.id) === String(s.productId));
     if (!p) continue;
     const k = `${p.name}__${p.brand || ""}`;
     if (!vendidasMap[k]) vendidasMap[k] = { key:k, name:p.name, brand:p.brand||"", emoji:p.emoji||"📦", uds:0, rev:0, cost:0, vars:{} };
     const r = vendidasMap[k];
-    r.uds += s.qty;
-    r.rev += s.total;
-    r.cost += (Number(p.cost) || 0) * s.qty;
+    r.uds += u;
+    r.rev += ingresoDe(s);
+    r.cost += (Number(p.cost) || 0) * u;
     const vk = `${p.color || "–"} · ${p.size ? "T" + p.size : "–"}`;
-    r.vars[vk] = (r.vars[vk] || 0) + s.qty;
+    r.vars[vk] = (r.vars[vk] || 0) + u;
   }
   const vendidas = Object.values(vendidasMap)
     .map(r => ({
@@ -2852,7 +3100,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
                 <div style={{ width:36,height:36,background:C.orangeLight,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0 }}>{e.emoji}</div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:800, fontSize:13.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.concept}</div>
-                  <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}</div>
+                  <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{e.date}{e.dateEnd?" → "+e.dateEnd:""} · {e.category}{e.platform?` · 📣 ${PLATAFORMAS.find(x=>x.id===e.platform)?.label||e.platform}`:""}{e.campaign?` · 🎯 ${e.campaign}`:""}</div>
                 </div>
                 <div style={{ fontWeight:900, fontSize:14.5, color:C.red, flexShrink:0 }}>{fmt(e.amount)}</div>
               </div>
@@ -2896,6 +3144,49 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
               <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>ganancia neta sobre tus gastos</div>
             </div>
           </div>
+
+          {/* 📣 PUBLICIDAD: ROAS, MER, costo por venta entregada y CPA — indicadores NUEVOS
+              (los de arriba no cambian: aquí sólo se suman vistas nuevas de la misma data) */}
+          <div className="card" style={{ padding:20 }}>
+            <div className="section-title">📣 Publicidad y atribución</div>
+            <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12 }}>
+              {[
+                { l:"ROAS confirmado", v:roas>0?`${roas.toFixed(1)}×`:"—", c:roas>=3?C.green:roas>0?C.yellow:C.muted,
+                  d:mktExp>0?`${fmt(ingPubli)} en ventas atribuidas a publicidad ÷ ${fmt(mktExp)} invertidos`:"Registra un gasto en Marketing para verlo" },
+                { l:"MER (todas las ventas)", v:mer>0?`${mer.toFixed(1)}×`:"—", c:mer>=3?C.green:mer>0?C.yellow:C.muted,
+                  d:mktExp>0?`${fmt(totalSalesR)} de ingreso total ÷ ${fmt(mktExp)} de publicidad`:"Registra un gasto en Marketing para verlo" },
+                { l:"Costo por venta entregada", v:fmt(costoVentEnt), c:C.blue,
+                  d:`${fmt(mktExp)} de publicidad ÷ ${entregadas.length} ventas entregadas` },
+                { l:"CPA por pedido confirmado", v:fmt(cpa), c:C.purple,
+                  d:`${fmt(mktExp)} de publicidad ÷ ${sC.length} pedidos confirmados` },
+              ].map(k=>(
+                <div key={k.l} style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:14 }}>
+                  <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",lineHeight:1.4 }}>{k.l}</div>
+                  <div style={{ fontSize:26,fontWeight:900,color:k.c,margin:"6px 0 4px" }}>{k.v}</div>
+                  <div style={{ fontSize:11,fontWeight:700,color:C.muted,lineHeight:1.5 }}>{k.d}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:12, fontSize:11.5, color:C.muted, fontWeight:700, lineHeight:1.6 }}>
+              📌 El gasto de publicidad sale de la pestaña <b>Gastos</b> (categoría <b>Marketing</b>) y se cuenta <b>una sola vez</b>: no se duplica por cada venta. Registra ahí la plataforma y la campaña para ver cuánto rinde cada una.
+            </div>
+          </div>
+
+          {/* 🕓 Dinero que todavía NO es ingreso */}
+          <div className="card" style={{ padding:20 }}>
+            <div className="section-title">🕓 Pendiente de cobro</div>
+            <div style={{ fontSize:36,fontWeight:900,color:pendientesR>0?"#B45309":C.muted,marginBottom:6 }}>{fmt(pendientesR)}</div>
+            <div style={{ fontSize:13,color:C.muted,fontWeight:700,lineHeight:1.6 }}>
+              {pendientesR>0
+                ? `Contraentregas aún no confirmadas: NO cuentan como ingreso ni como costo hasta que el cliente reciba. En Ventas dale a ✅ Confirmar recibido.`
+                : `No hay pedidos pendientes en este rango. ✅`}
+            </div>
+            {devueltasR>0 && (
+              <div style={{ marginTop:12, background:C.redLight, borderRadius:12, padding:12, fontSize:13, fontWeight:800, color:C.red, lineHeight:1.6 }}>
+                ↩️ {fmt(devueltasR)} devueltos dentro de ventas confirmadas — ya salieron del ingreso.
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -2926,20 +3217,29 @@ function CabeceraPlegable({ titulo, total, etqTotal, limite, abierto, onToggle, 
 
 function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const [rango, setRango] = useState({ id:"todo" });
+  // 🧲 Filtrar las ventas por FUENTE de adquisición (orgánico, publicidad…)
+  const [atrFiltro, setAtrFiltro] = useState("todo");
   // 📂 Listas plegables: arrancan encogidas; un clic las despliega
   const [verRanking, setVerRanking] = useState(false);
   const [verTallas, setVerTallas]   = useState(false);
   const [verComprar, setVerComprar] = useState(false);
   const [verMarcas, setVerMarcas]   = useState(false);
   const N_RANK = 5, N_TALLAS = 6, N_COMPRAR = 4, N_MARCA = 5;
-  const sF = sales.filter(s => enRango(s.date, rango));
+  const sBase = sales.filter(s => enRango(s.date, rango));
+  // 🧲 Al filtrar por fuente sólo se reducen las VENTAS: los gastos no se pueden
+  //    repartir por fuente (no llevan atribución), por eso sale el aviso.
+  const filtrandoAtrib = atrFiltro !== "todo";
+  const sF = filtrandoAtrib ? sBase.filter(s => (s.attribution || "") === (atrFiltro === "sin" ? "" : atrFiltro)) : sBase;
   const eF = expenses.filter(e => solapaRango(e, rango));
-  const totalSR = sF.reduce((a,s) => a + s.total, 0);
+  const totalSR = sF.reduce((a,s) => a + ingresoDe(s), 0);
   const totalER = eF.reduce((a,e) => a + e.amount, 0);
   const profitR = totalSR - totalER;
+  // 💰 Sólo lo CONFIRMADO manda en las métricas; lo pendiente va aparte
+  const sC = confirmadas(sF);
+  const pendientesR = ingresosPendientes(sF);
   // unidades vendidas POR PRODUCTO dentro del rango elegido
   const porProducto = {};
-  sF.forEach(s => { if (s.productId) porProducto[s.productId] = (porProducto[s.productId] || 0) + (s.qty || 0); });
+  sF.forEach(s => { if (s.productId) porProducto[s.productId] = (porProducto[s.productId] || 0) + unidadesContadas(s); });
   // 📌 Fuente de verdad = las VENTAS del rango (no el contador del producto).
   //    Así, si borras una venta por devolución, todas las métricas bajan solas.
   const vend = (p) => !p ? 0 : (porProducto[p.id] || 0);
@@ -2952,7 +3252,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
     const p = products.find(x => String(x.id) === String(s.productId));
     if (!p) return;
     const k = `${p.name}__${p.brand || ""}`;
-    dineroPorRef[k] = (dineroPorRef[k] || 0) + (s.total || 0);
+    dineroPorRef[k] = (dineroPorRef[k] || 0) + ingresoDe(s);
   });
   const porRef = {};
   products.forEach(p => {
@@ -2971,8 +3271,8 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   sF.forEach(s => {
     const p = products.find(x => String(x.id) === String(s.productId));
     const b = (p && String(p.brand || "").trim()) || "Sin marca";
-    marcaUn[b] = (marcaUn[b] || 0) + (s.qty || 0);
-    marcaTot[b] = (marcaTot[b] || 0) + (s.total || 0);
+    marcaUn[b] = (marcaUn[b] || 0) + unidadesContadas(s);
+    marcaTot[b] = (marcaTot[b] || 0) + ingresoDe(s);
   });
   const byBrand = Object.keys(marcaUn)
     .map(b => ({ brand:b, uds:marcaUn[b], total:marcaTot[b] }))
@@ -2980,6 +3280,34 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
     .sort((a,b) => b.uds - a.uds || b.total - a.total);
   const totalMarcas = byBrand.reduce((a,m)=>a+m.uds,0);
   const maxMarca = byBrand[0]?.uds || 1;
+  // 🧲 Ventas por FUENTE de adquisición (sin dato = "Sin atribuir")
+  const porAtrib = {};
+  sC.forEach(s => {
+    const k = s.attribution || "";
+    if (!porAtrib[k]) porAtrib[k] = { id:k, label:etiquetaAtribucion(s), pedidos:0, uds:0, total:0 };
+    porAtrib[k].pedidos += 1;
+    porAtrib[k].uds += unidadesContadas(s);
+    porAtrib[k].total += ingresoDe(s);
+  });
+  const listaAtrib = Object.values(porAtrib).sort((a,b) => b.total - a.total || b.uds - a.uds);
+  // 📣 Sólo las ventas de PUBLICIDAD: cuánto rindió cada plataforma y campaña
+  const porPlataforma = {}, porCampana = {};
+  sC.filter(s => s.attribution === "publicidad").forEach(s => {
+    const kp = s.platform || "otra";
+    if (!porPlataforma[kp]) porPlataforma[kp] = { id:kp, label:(PLATAFORMAS.find(x=>x.id===kp)||{label:"Otra"}).label, pedidos:0, uds:0, total:0 };
+    porPlataforma[kp].pedidos += 1; porPlataforma[kp].uds += unidadesContadas(s); porPlataforma[kp].total += ingresoDe(s);
+    const kc = (s.campaign || "").trim();
+    if (kc) {
+      if (!porCampana[kc]) porCampana[kc] = { id:kc, label:kc, pedidos:0, uds:0, total:0 };
+      porCampana[kc].pedidos += 1; porCampana[kc].uds += unidadesContadas(s); porCampana[kc].total += ingresoDe(s);
+    }
+  });
+  const listaPlataformas = Object.values(porPlataforma).sort((a,b)=>b.total-a.total);
+  const listaCampanas = Object.values(porCampana).sort((a,b)=>b.total-a.total);
+  const mktExpM   = eF.filter(e=>e.category==="Marketing").reduce((a,e)=>a+e.amount,0);
+  const ingPubliM = sC.filter(s=>s.attribution==="publicidad").reduce((a,s)=>a+ingresoDe(s),0);
+  const roasM     = mktExpM>0 ? ingPubliM/mktExpM : 0;
+  const merM      = mktExpM>0 ? totalSR/mktExpM : 0;
   const byColor = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.color])acc[p.color]=0;acc[p.color]+=v;return acc;},{});
   // unidades vendidas por talla (según el rango elegido)
   const sizeMap = {};
@@ -2993,13 +3321,84 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <DateRangeFilter rango={rango} onChange={setRango} />
+      {/* 🧲 Filtro por FUENTE de adquisición: ver sólo las ventas de esa fuente */}
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+        <span style={{ fontSize:11.5, fontWeight:900, color:C.muted, textTransform:"uppercase" }}>🧲 Fuente</span>
+        <button className={`filter-btn ${atrFiltro==="todo"?"active":""}`} onClick={()=>setAtrFiltro("todo")} title="Todas las fuentes">Todas</button>
+        <button className={`filter-btn ${atrFiltro==="sin"?"active":""}`} onClick={()=>setAtrFiltro("sin")} title="Ventas sin fuente registrada (incluye todo lo histórico)">➖ Sin atribuir</button>
+        {ATRIBUCIONES.map(a=><button key={a.id} className={`filter-btn ${atrFiltro===a.id?"active":""}`} onClick={()=>setAtrFiltro(a.id)}>{a.emoji} {a.label}</button>)}
+      </div>
+      {filtrandoAtrib && (
+        <div style={{ background:C.yellowLight, borderRadius:12, padding:"9px 13px", fontSize:12, fontWeight:800, color:C.yellow, lineHeight:1.55 }}>
+          🪧 Viendo sólo las ventas de esta fuente. Los <b>gastos no se pueden repartir por fuente</b>, así que margen, ROI y gastos siguen siendo los del rango completo.
+        </div>
+      )}
       <div className="grid-4">
         {[
           {label:"Margen neto",   value:`${margin}%`,                                    color:margin>30?C.green:C.orange, bg:margin>30?C.greenLight:C.orangeLight},
-          {label:"Ticket prom.", value:fmt(sF.length?Math.round(totalSR/sF.length):0), color:C.blue,   bg:C.blueLight},
+          {label:"Ticket prom.", value:fmt(sC.length?Math.round(totalSR/sC.length):0), color:C.blue,   bg:C.blueLight},
           {label:"Más vendido",  value:ranking[0] ? ranking[0].name.split(" ").slice(0,2).join(" ") : "—", color:C.yellow, bg:C.yellowLight},
           {label:"Referencias",  value:products.length,                                  color:C.purple, bg:C.purpleLight},
         ].map(k=><div key={k.label} className="stat-card" style={{ background:k.bg }}><div style={{ fontSize:11,fontWeight:800,color:k.color,marginBottom:6,textTransform:"uppercase" }}>{k.label}</div><div style={{ fontSize:24,fontWeight:900,color:C.text }}>{k.value}</div></div>)}
+      </div>
+      {/* 🧲 ATRIBUCIÓN: de dónde salieron tus ventas y qué rinde la publicidad */}
+      <div className="card" style={{ padding:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:14 }}>
+          <div className="section-title" style={{ marginBottom:0 }}>🧲 Atribución y publicidad</div>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            <span className="pill" style={{ background:mktExpM>0?C.purpleLight:C.bg, color:mktExpM>0?C.purple:C.muted, fontSize:11, padding:"4px 10px", fontWeight:900 }} title="Gasto de publicidad (Gastos → Marketing). Se cuenta UNA sola vez.">📣 {fmt(mktExpM)} invertidos</span>
+            <span className="pill" style={{ background:roasM>=3?C.greenLight:C.bg, color:roasM>=3?C.green:C.muted, fontSize:11, padding:"4px 10px", fontWeight:900 }} title="ROAS confirmado = ingreso atribuido a publicidad ÷ gasto publicitario">ROAS {roasM>0?`${roasM.toFixed(1)}×`:"—"}</span>
+            <span className="pill" style={{ background:merM>=3?C.greenLight:C.bg, color:merM>=3?C.green:C.muted, fontSize:11, padding:"4px 10px", fontWeight:900 }} title="MER = ingreso total ÷ gasto publicitario">MER {merM>0?`${merM.toFixed(1)}×`:"—"}</span>
+          </div>
+        </div>
+        {listaAtrib.length===0 && (
+          <div style={{ fontSize:13, color:C.muted, fontWeight:700, lineHeight:1.7 }}>
+            Sin ventas confirmadas en este rango 📅<br/>
+            <span style={{ fontWeight:600 }}>Registra una venta y elige de dónde salió para empezar a medir.</span>
+          </div>
+        )}
+        {listaAtrib.map(a=>{
+          const max = listaAtrib[0].total || 1;
+          return (
+            <div key={a.id||"sin"} style={{ marginBottom:13 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:8, marginBottom:4, alignItems:"baseline" }}>
+                <span style={{ fontWeight:800, fontSize:13 }}>{a.label}</span>
+                <span style={{ textAlign:"right", flexShrink:0 }}>
+                  <b style={{ fontSize:13.5, color:C.green }}>{fmt(a.total)}</b>
+                  <span style={{ fontSize:11, fontWeight:800, color:C.muted }}> · {a.uds} ud · {a.pedidos} ped.</span>
+                </span>
+              </div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((a.total/max)*100)}%`, background:a.id==="publicidad"?"linear-gradient(90deg,#7C3AED,#4A90FF)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
+            </div>
+          );
+        })}
+        {listaPlataformas.length>0 && (
+          <div style={{ marginTop:6 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", marginBottom:8 }}>📣 Por plataforma (sólo publicidad)</div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {listaPlataformas.map(p=>(
+                <span key={p.id} className="pill" style={{ background:C.purpleLight, color:C.purple, fontSize:11, padding:"5px 11px", fontWeight:900 }}>
+                  {p.label} · {fmt(p.total)} · {p.pedidos} ped.
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {listaCampanas.length>0 && (
+          <div style={{ marginTop:12 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", marginBottom:8 }}>🎯 Por campaña</div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {listaCampanas.map(c=>(
+                <span key={c.id} className="pill" style={{ background:C.blueLight, color:C.blue, fontSize:11, padding:"5px 11px", fontWeight:900 }}>
+                  {c.label} · {fmt(c.total)} · {c.pedidos} ped.
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:12, lineHeight:1.6 }}>
+          📌 Sólo cuentan ventas <b>confirmadas</b> (Entregado y cobrado). Lo que no tiene fuente queda como <b>"Sin atribuir"</b>: así se respeta tu histórico sin inventar datos.
+        </div>
       </div>
       <div className={isMobile?"":"desktop-2col"}>
         <div>
@@ -3624,6 +4023,15 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
 
 function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSave }) {
   const [pid,setPid]=useState(""); const [qty,setQty]=useState(1); const [method,setMethod]=useState("Efectivo");
+  // 📦 MODALIDAD DE PAGO: "pagada" entra como ingreso de una vez;
+  //    "contraentrega" queda Pendiente de envío hasta que se confirme el cobro.
+  const [modality,setModality]=useState("pagada");
+  // 🧲 ATRIBUCIÓN: de dónde salió la venta. El canal de compra (dónde se
+  //    concretó) es OTRA cosa y se elige aparte.
+  const [attribution,setAttribution]=useState("");
+  const [channel,setChannel]=useState("");
+  const [platform,setPlatform]=useState("");
+  const [campaign,setCampaign]=useState("");
   const [scanOpen,setScanOpen]=useState(false); const [err,setErr]=useState("");
   // 👥 Cliente de esta venta: se elige uno existente o se agrega rápido aquí mismo
   const [cli,setCli]=useState("");
@@ -3685,8 +4093,9 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     ...(customers||[]).map(c => ({ id:String(c.id), name:`👤 ${c.name}${c.city?` · ${c.city}`:""}`, txt:[c.name,c.city,c.phone,c.email].join(" ") })),
   ];
   const cliElegido = (customers||[]).find(c => String(c.id) === String(cli));
-  const comprasCli = cli ? (sales||[]).filter(s => String(s.customerId) === String(cli)) : [];
-  const gastadoCli = comprasCli.reduce((a,s)=>a+(s.total||0),0);
+  // 💰 "Gastado" = sólo lo CONFIRMADO (una contraentrega pendiente todavía no es dinero)
+  const comprasCli = cli ? confirmadas((sales||[]).filter(s => String(s.customerId) === String(cli))) : [];
+  const gastadoCli = comprasCli.reduce((a,s)=>a+ingresoDe(s),0);
   const guardarCliente = () => {
     const n = String((nuevoCli && nuevoCli.name) || "").trim();
     if(!n){ setErr("⚠️ Escribe el nombre del cliente"); return; }
@@ -3702,9 +4111,16 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
     const malDto = renglones.find(r => dtoDe(r) > bruto(r));
     if(malDto){ setErr(`⚠️ El descuento de ${malDto.pr.name} no puede superar ${fmt(bruto(malDto))}`); return; }
     setErr("");
+    // 🧲 Si es publicidad, hay que decir EN QUÉ plataforma (es lo que permite
+    //    medir ROAS por plataforma). La campaña es opcional.
+    if (attribution === "publicidad" && !platform) { setErr("⚠️ Elige la plataforma de la publicidad: Meta, TikTok, Google u Otra"); return; }
     // Todo lo de esta venta comparte el mismo prefijo de id: así en el historial
     // se ven juntos y se borran juntos. Con 1 sola referencia se guarda como antes.
     const g = renglones.length > 1 ? `${newId()}::` : "";
+    // 📦 Estado inicial del pedido:
+    //    · pagada        → "Entregado y cobrado" (entra como ingreso, como siempre)
+    //    · contraentrega → "Pendiente de envío" (NO es ingreso hasta confirmar)
+    const estadoInicial = modality === "contraentrega" ? "pendiente" : "entregado";
     onSave(renglones.map((r,i)=>({
       id: g ? `${g}${i+1}` : newId(),
       productId:String(r.pid),
@@ -3714,6 +4130,12 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
       date:hoyISO(),
       method,
       customerId: cli || null,
+      modality,
+      status: estadoInicial,
+      attribution: attribution || null,
+      channel: channel || null,
+      platform: attribution === "publicidad" ? (platform || null) : null,
+      campaign: attribution === "publicidad" ? (String(campaign||"").trim() || null) : null,
     })));
   }
   return (
@@ -3827,24 +4249,84 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
               </div>
             </div>
           )}
+          {/* 💵 MODALIDAD DE PAGO: pagada o contraentrega */}
+          <div>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Modalidad de pago</div>
+            <div style={{ display:"flex",gap:8 }}>
+              {MODALIDADES.map(m=>{
+                const on=modality===m.id;
+                const borde=m.id==="pagada"?"#047857":"#2563EB";
+                const fondo=m.id==="pagada"?"#D1FAE5":"#DBEAFE";
+                return (
+                  <button key={m.id} onClick={()=>setModality(m.id)}
+                    style={{ flex:1, textAlign:"left", background:on?fondo:C.white, border:"1.5px solid "+(on?borde:C.border),
+                             borderRadius:14, padding:"11px 13px", cursor:"pointer", fontFamily:"inherit", minWidth:0 }}>
+                    <span style={{ fontSize:17 }}>{m.emoji}</span>
+                    <span style={{ fontWeight:900, fontSize:13.5, display:"block", marginTop:3, color:C.text }}>{m.label}</span>
+                    <span style={{ fontSize:11, color:C.muted, fontWeight:700, display:"block", marginTop:2, lineHeight:1.4 }}>
+                      {m.id==="pagada" ? "Cobrada ya · entra como ingreso" : "Se cobra al entregar · queda pendiente"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {modality==="contraentrega" && (
+              <div style={{ marginTop:9, fontSize:11.5, fontWeight:800, color:"#92400E", background:"#FEF3C7", borderRadius:12, padding:"10px 12px", lineHeight:1.55 }}>
+                📦 Se guarda como <b>Pendiente de envío</b>: el stock se aparta pero <b>NO es ingreso todavía</b>. Cuando el cliente reciba y pagues, ve a <b>Ventas</b> y dale a <b>✅ Confirmar recibido</b>.
+              </div>
+            )}
+          </div>
           <div>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:8,textTransform:"uppercase" }}>Método de pago</div>
             <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
               {["Efectivo","Tarjeta","Nequi","Transferencia","Daviplata"].map(m=><button key={m} className={`filter-btn ${method===m?"active":""}`} onClick={()=>setMethod(m)}>{m}</button>)}
             </div>
           </div>
+          {/* 🧲 ATRIBUCIÓN: de dónde salió la venta (fuente de adquisición) */}
+          <div>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>🧲 Atribución — ¿de dónde salió esta venta?</div>
+            <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+              <button className={`filter-btn ${attribution===""?"active":""}`} onClick={()=>{setAttribution("");setPlatform("");setCampaign("");}} title="Aún no se de dónde salió">➖ Sin atribuir</button>
+              {ATRIBUCIONES.map(a=><button key={a.id} className={`filter-btn ${attribution===a.id?"active":""}`} onClick={()=>setAttribution(a.id)}>{a.emoji} {a.label}</button>)}
+            </div>
+            {attribution==="publicidad" && (
+              <div style={{ marginTop:10, background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:12, display:"flex", flexDirection:"column", gap:10 }}>
+                <div>
+                  <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Plataforma *</div>
+                  <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>
+                    {PLATAFORMAS.map(pl=><button key={pl.id} className={`filter-btn ${platform===pl.id?"active":""}`} onClick={()=>setPlatform(pl.id)}>{pl.label}</button>)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>Campaña (opcional)</div>
+                  <input className="stk-input" placeholder="Ej: Conjuntos octubre · Retargeting" value={campaign} maxLength={60} onChange={e=>setCampaign(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+          {/* 🛍️ CANAL DE COMPRA: dónde se CONCRETÓ (distinto de la fuente) */}
+          <div>
+            <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>🛍️ Canal de compra — ¿dónde se concretó? (opcional)</div>
+            <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+              {CANALES_COMPRA.map(c=><button key={c.id} className={`filter-btn ${channel===c.id?"active":""}`} onClick={()=>setChannel(channel===c.id?"":c.id)}>{c.label}</button>)}
+            </div>
+            <div style={{ fontSize:11, color:C.muted, fontWeight:700, marginTop:6, lineHeight:1.5 }}>
+              💡 El <b>canal</b> es dónde se hizo la compra (web, WhatsApp…). La <b>atracción</b> es cómo te encontró (orgánico, publicidad…). Son cosas distintas.
+            </div>
+          </div>
           {renglones.length>0 &&(
-            <div style={{ background:C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
-              <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>Total a cobrar</div>
-              <div style={{ fontSize:36,fontWeight:900,color:C.green }}>{fmt(total)}</div>
+            <div style={{ background:modality==="contraentrega"?"#DBEAFE":C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
+              <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>{modality==="contraentrega"?"Total a cobrar al entregar":"Total a cobrar"}</div>
+              <div style={{ fontSize:36,fontWeight:900,color:modality==="contraentrega"?"#2563EB":C.green }}>{fmt(total)}</div>
               {totalDesc>0 && <div style={{ fontSize:12.5,fontWeight:800,color:C.red,marginTop:3 }}>🏷️ Subtotal {fmt(subtotal)} · Rebaja −{fmt(totalDesc)}</div>}
+              {modality==="contraentrega" && <div style={{ fontSize:12,fontWeight:900,color:"#1E40AF",marginTop:6 }}>⏳ Aún NO es ingreso — se confirma al entregar</div>}
             </div>
           )}
         </div>
         {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
-          <button className="btn-main" onClick={save} style={{ flex:2 }}>{renglones.length>1 ? `Guardar venta · ${renglones.length} ref.` : "Confirmar venta"}</button>
+          <button className="btn-main" onClick={save} style={{ flex:2 }}>{renglones.length>1 ? `Guardar ${modality==="contraentrega"?"pedido":"venta"} · ${renglones.length} ref.` : (modality==="contraentrega" ? "Guardar pedido 📦" : "Confirmar venta")}</button>
         </div>
         {/* 📷 Escanear la etiqueta para agregar el producto al instante */}
         {scanOpen && (
@@ -3881,6 +4363,8 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
   const [fecha, setFecha] = useState(venta.date || hoyISO());
   const [method, setMethod] = useState(venta.method || "Efectivo");
   const [cli, setCli]     = useState(venta.customerId ? String(venta.customerId) : "");
+  // 📦 Modalidad editable: si cambia, el estado se acomoda solo
+  const [modality, setModality] = useState(venta.modality || "pagada");
   const [err, setErr]     = useState("");
   const p = products.find(x => String(x.id) === String(pid));
   const unit = Math.max(0, numDinero(precio));
@@ -3905,7 +4389,15 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
     if (!fecha) { setErr("⚠️ Elige la fecha de la venta"); return; }
     if (desc > unit * qty) { setErr(`⚠️ El descuento no puede superar ${fmt(unit * qty)}`); return; }
     setErr("");
-    onSave({ ...venta, productId:String(p.id), qty, total, discount: desc, date:fecha, method, customerId: cli || null });
+    // 📦 Si cambió la modalidad, el estado del pedido se acomoda solo.
+    //    El stock NO se mueve: la reserva se hizo una sola vez al registrar.
+    const modAntes = venta.modality || "pagada";
+    let st = venta.status || "entregado";
+    if (modality !== modAntes) {
+      if (modality === "contraentrega" && st === "entregado") st = "pendiente";
+      if (modality === "pagada" && (st === "pendiente" || st === "enviado")) st = "entregado";
+    }
+    onSave({ ...venta, productId:String(p.id), qty, total, discount: desc, date:fecha, method, customerId: cli || null, modality, status: st });
   }
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -3959,6 +4451,33 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
               ))}
             </div>
           </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:5, textTransform:"uppercase" }}>📦 Estado y modalidad del pedido</div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:9 }}>
+              <span className="pill" style={{ background:estadoDe(venta).bg, color:estadoDe(venta).color, fontSize:11, padding:"4px 10px", fontWeight:900 }}>{estadoDe(venta).emoji} {estadoDe(venta).label}</span>
+              <span className="pill" style={{ background:C.bg, color:C.muted, fontSize:11, padding:"4px 10px", fontWeight:800 }} title="Fuente de adquisición">🧲 {etiquetaAtribucion(venta)}</span>
+              {etiquetaCanal(venta) && <span className="pill" style={{ background:C.bg, color:C.muted, fontSize:11, padding:"4px 10px", fontWeight:800 }} title="Canal de compra">🛍️ {etiquetaCanal(venta)}</span>}
+              {(venta.returnedQty > 0) && <span className="pill" style={{ background:C.redLight, color:C.red, fontSize:11, padding:"4px 10px", fontWeight:900 }}>↩️ {venta.returnedQty} ud devueltas</span>}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              {MODALIDADES.map(m => (
+                <button key={m.id} className={`filter-btn ${modality === m.id ? "active" : ""}`} onClick={() => setModality(m.id)} style={{ flex:1 }} title={m.id === "pagada" ? "Cobrada de una vez" : "Se cobra al entregar"}>{m.emoji} {m.label}</button>
+              ))}
+            </div>
+            {(modality === (venta.modality || "pagada")) ? (
+              <div style={{ fontSize:11, color:C.muted, fontWeight:700, marginTop:6, lineHeight:1.5 }}>
+                💡 Para cambiar el estado (enviado, confirmar, cancelar…) usa los botones del historial de Ventas.
+              </div>
+            ) : modality === "contraentrega" ? (
+              <div style={{ fontSize:11.5, color:"#92400E", fontWeight:800, marginTop:6, lineHeight:1.5 }}>
+                📦 Al guardar pasará a <b>Pendiente de envío</b>: deja de contar como ingreso hasta que la confirmes.
+              </div>
+            ) : (
+              <div style={{ fontSize:11.5, color:"#065F46", fontWeight:800, marginTop:6, lineHeight:1.5 }}>
+                💵 Al guardar pasará a <b>Entregado y cobrado</b> y volverá a contar como ingreso.
+              </div>
+            )}
+          </div>
           <div style={{ background:C.greenLight, borderRadius:16, padding:"16px 20px", textAlign:"center" }}>
             <div style={{ fontSize:13, color:C.muted, fontWeight:700 }}>Total de esta venta</div>
             <div style={{ fontSize:36, fontWeight:900, color:C.green }}>{fmt(total)}</div>
@@ -3981,8 +4500,93 @@ function EditSaleModal({ venta, products, customers, onClose, onSave }) {
   );
 }
 
+// ── DEVOLUCIÓN DE UNA VENTA (parcial o total) ────────────────────────────────
+// El registro ORIGINAL no se borra: sólo se le suman las unidades devueltas,
+// el dinero que sale del ingreso, el tipo (logística/comercial) y cuándo/quién.
+function DevolucionModal({ venta, producto, onClose, onConfirm }) {
+  const max = Math.max(0, (Number(venta.qty) || 0) - (Number(venta.returnedQty) || 0));
+  const [u, setU] = useState(Math.min(1, max));
+  const [tipo, setTipo] = useState("logistica");
+  const [err, setErr] = useState("");
+  const precioU = (Number(venta.qty) || 0) > 0 ? (Number(venta.total) || 0) / (Number(venta.qty) || 0) : 0;
+  const monto = Math.round((Number(u) || 0) * precioU);
+  const restante = Math.max(0, (Number(venta.total) || 0) - (Number(venta.returnedAmount) || 0) - monto);
+  const cambiarU = (d) => setU(v => Math.max(1, Math.min(max, (Number(v) || 0) + d)));
+  const confirmar = () => {
+    const n = Math.round(Number(u) || 0);
+    if (!(n > 0)) { setErr("⚠️ Indica cuántas unidades se devuelven"); return; }
+    if (n > max) { setErr(`⚠️ Sólo quedan ${max} unidad${max === 1 ? "" : "es"} por devolver`); return; }
+    onConfirm(n, tipo);
+  };
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="handle" />
+        <div style={{ fontWeight:900, fontSize:20, marginBottom:6 }}>↩️ Registrar devolución</div>
+        <div style={{ fontSize:12.5, color:C.muted, fontWeight:600, marginBottom:16, lineHeight:1.55 }}>
+          La venta <b>no se borra</b>: queda el registro con las unidades y el dinero que salieron, y el inventario recupera lo que regresó.
+        </div>
+
+        <div style={{ display:"flex", gap:12, alignItems:"center", background:C.bg, border:"1.5px solid "+C.border, borderRadius:16, padding:14, marginBottom:16 }}>
+          <div style={{ width:44, height:44, background:C.greenLight, borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>{producto?.emoji || "📦"}</div>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:900, fontSize:14.5 }}>{producto?.name || "Producto"}</div>
+            <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:3 }}>
+              {producto?.color || "—"} · T{producto?.size || "—"} · {venta.qty} ud · {fmt(venta.total)} · {venta.date}
+            </div>
+            {venta.returnedQty > 0 && <div style={{ fontSize:11.5, color:C.red, fontWeight:800, marginTop:3 }}>↩️ Ya se habían devuelto {venta.returnedQty} ud ({fmt(venta.returnedAmount || 0)})</div>}
+          </div>
+        </div>
+
+        {/* ¿Cuántas unidades regresan? */}
+        <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6, textTransform:"uppercase" }}>Unidades que regresan (máx. {max}) *</div>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <button className="stock-btn" onClick={() => cambiarU(-1)} disabled={u <= 1} style={{ opacity:u <= 1 ? .4 : 1 }}>−</button>
+          <input className="stk-input" inputMode="numeric" value={u}
+            onChange={e => { const n = String(e.target.value).replace(/[^\d]/g, "").slice(0, 3); setU(n === "" ? "" : Math.min(max, parseInt(n, 10))); setErr(""); }}
+            style={{ textAlign:"center", fontWeight:900, maxWidth:110 }} />
+          <button className="stock-btn" onClick={() => cambiarU(1)} disabled={u >= max} style={{ opacity:u >= max ? .4 : 1 }}>+</button>
+          <button className="filter-btn" onClick={() => setU(max)} style={{ flex:1 }}>Devolver las {max}</button>
+        </div>
+
+        {/* ¿Por qué volvió? */}
+        <div style={{ fontSize:11, fontWeight:800, color:C.muted, margin:"16px 0 6px", textTransform:"uppercase" }}>Tipo de devolución *</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {TIPOS_DEVOLUCION.map(t => {
+            const on = tipo === t.id;
+            return (
+              <button key={t.id} onClick={() => setTipo(t.id)}
+                style={{ textAlign:"left", background:on?"#EFF6FF":C.white, border:"1.5px solid "+(on?C.blue:C.border), borderRadius:14, padding:"11px 13px", cursor:"pointer", fontFamily:"inherit", display:"flex", gap:10, alignItems:"flex-start" }}>
+                <span style={{ fontSize:18, lineHeight:1.2 }}>{t.emoji}</span>
+                <span>
+                  <span style={{ fontWeight:900, fontSize:13.5, display:"block", color:C.text }}>{t.label}</span>
+                  <span style={{ fontSize:11.5, color:C.muted, fontWeight:600, lineHeight:1.45, display:"block", marginTop:2 }}>{t.desc}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Lo que cambia */}
+        <div style={{ background:"#FFF7ED", border:"1.5px solid #FED7AA", borderRadius:14, padding:"12px 14px", marginTop:16, fontSize:12.5, fontWeight:800, color:"#9A3412", lineHeight:1.7 }}>
+          ↩️ Inventario: <b>+{u || 0} ud</b> de vuelta al estante<br/>
+          💸 Sale de los ingresos: <b>−{fmt(monto)}</b><br/>
+          🧾 Esta venta queda en <b>{fmt(restante)}</b> confirmados
+        </div>
+
+        {err && <div style={{ marginTop:14, background:C.redLight, color:C.red, borderRadius:12, padding:"10px 14px", fontSize:13, fontWeight:800 }}>⚠️ {err}</div>}
+
+        <div style={{ display:"flex", gap:10, marginTop:18 }}>
+          <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cancelar</button>
+          <button className="btn-main" onClick={confirmar} style={{ flex:2 }}>↩️ Registrar devolución</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddExpenseModal({ onClose, onSave }) {
-  const [f,setF]=useState({concept:"",amount:"",category:"Operacional",date:hoyISO(),dateEnd:""});
+  const [f,setF]=useState({concept:"",amount:"",category:"Operacional",date:hoyISO(),dateEnd:"",platform:"",campaign:""});
   const [err,setErr]=useState("");
   const ce={Operacional:"🏪",Compras:"🛍️",Marketing:"📱",Logística:"🚚",Otro:"💡"};
   function save() {
@@ -3990,7 +4594,11 @@ function AddExpenseModal({ onClose, onSave }) {
     if(f.dateEnd&&f.date&&f.dateEnd<f.date){ setErr("⚠️ La fecha \"Hasta\" es anterior a la fecha de inicio."); return; }
     if(f.date>hoyISO()){ if(!window.confirm(`⚠️ La fecha es FUTURA (${f.date}).\n\n¿Registrar el gasto de todas formas?`)) return; }
     setErr("");
-    onSave({...f,id:newId(),amount:+f.amount,date:f.date||hoyISO(),dateEnd:f.dateEnd||"",emoji:ce[f.category]||"💡"});
+    // 📣 Gasto publicitario: si es Marketing, se guarda la plataforma y la campaña
+    //    para medir ROAS/MER por plataforma. Se cuenta UNA sola vez (es el gasto).
+    const esMkt = f.category === "Marketing";
+    onSave({...f,id:newId(),amount:+f.amount,date:f.date||hoyISO(),dateEnd:f.dateEnd||"",emoji:ce[f.category]||"💡",
+            platform: esMkt ? (f.platform || "") : "", campaign: esMkt ? (f.campaign||"").trim() : ""});
   }
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -4011,6 +4619,24 @@ function AddExpenseModal({ onClose, onSave }) {
               {["Operacional","Compras","Marketing","Logística","Otro"].map(c=><button key={c} className={`filter-btn ${f.category===c?"active":""}`} onClick={()=>setF(p=>({...p,category:c}))}>{ce[c]} {c}</button>)}
             </div>
           </div>
+          {/* 📣 Sólo si es PUBLICIDAD: en qué plataforma y con qué campaña */}
+          {f.category==="Marketing" && (
+            <div style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:12, display:"flex", flexDirection:"column", gap:11 }}>
+              <div>
+                <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>📣 Plataforma (opcional)</div>
+                <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>
+                  {PLATAFORMAS.map(pl=><button key={pl.id} className={`filter-btn ${f.platform===pl.id?"active":""}`} onClick={()=>setF(p=>({...p,platform:p.platform===pl.id?"":pl.id}))}>{pl.label}</button>)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:11,fontWeight:800,color:C.muted,marginBottom:5,textTransform:"uppercase" }}>🎯 Campaña (opcional)</div>
+                <input className="stk-input" placeholder="Ej: Retargeting octubre" value={f.campaign} maxLength={60} onChange={e=>setF(p=>({...p,campaign:e.target.value}))} />
+              </div>
+              <div style={{ fontSize:11, fontWeight:700, color:C.muted, lineHeight:1.5 }}>
+                💡 Así el panel te dice cuánto rinde <b>cada plataforma</b> (ROAS) y este gasto se cuenta <b>una sola vez</b> en Finanzas.
+              </div>
+            </div>
+          )}
         </div>
         {err && <div style={{ background:C.redLight, color:C.red, borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:800, marginTop:4 }}>{err}</div>}
         <div style={{ display:"flex",gap:10,marginTop:20 }}>

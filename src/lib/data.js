@@ -180,6 +180,135 @@ const leerMethod = (raw) => {
   return t ? { method: t[1] || "Efectivo", discount: Number(t[2]) || 0 } : { method: m, discount: 0 };
 };
 
+// ══════════════════════════════════════════════════════════════
+//  📦 CICLO DE VIDA DEL PEDIDO · MODALIDAD DE PAGO · ATRIBUCIÓN
+//  Columnas nuevas desde la migración
+//  supabase/migrations/20261008000001_contraentrega_atribucion.sql
+//
+//  REGLAS (las MISMAS en Inicio, Ventas, Finanzas, Métricas y CRM):
+//   · INGRESO confirmado = status "entregado" y nada más.
+//     El histórico migró con status="entregado" → ningún total viejo cambia.
+//   · "Pendiente de envío" y "Enviado" NO son ingreso (aún no se cobró).
+//   · "Cancelado" y "Devuelto" tampoco.
+//   · Devolución parcial resta del ingreso (returned_amount).
+//   · attribution vacío → en pantalla: "Sin atribuir".
+//   · El stock se descuenta UNA sola vez, al registrar la venta;
+//     confirmar NO vuelve a descontarlo.
+// ══════════════════════════════════════════════════════════════
+
+export const ESTADOS = [
+  { id:"pendiente", label:"Pendiente de envío",  emoji:"🕓", color:"#B45309", bg:"#FEF3C7" },
+  { id:"enviado",   label:"Enviado",             emoji:"🚚", color:"#2563EB", bg:"#DBEAFE" },
+  { id:"entregado", label:"Entregado y cobrado", emoji:"✅", color:"#047857", bg:"#D1FAE5" },
+  { id:"devuelto",  label:"Devuelto",            emoji:"↩️", color:"#B91C1C", bg:"#FEE2E2" },
+  { id:"cancelado", label:"Cancelado",           emoji:"🚫", color:"#6B7280", bg:"#F3F4F6" },
+];
+
+export const MODALIDADES = [
+  { id:"pagada",        label:"Venta pagada", emoji:"💵" },
+  { id:"contraentrega", label:"Contraentrega", emoji:"📦" },
+];
+
+export const ATRIBUCIONES = [
+  { id:"organico",   label:"Orgánico",   emoji:"🌱" },
+  { id:"publicidad", label:"Publicidad", emoji:"📣" },
+  { id:"web",        label:"Página web", emoji:"🌐" },
+  { id:"offline",    label:"Offline",    emoji:"🚶" },
+];
+
+export const PLATAFORMAS = [
+  { id:"meta",   label:"Meta (FB/IG)" },
+  { id:"tiktok", label:"TikTok" },
+  { id:"google", label:"Google" },
+  { id:"otra",   label:"Otra" },
+];
+
+// Canal de compra: DÓNDE se concretó la venta (no confundir con la fuente)
+export const CANALES_COMPRA = [
+  { id:"web",         label:"Página web" },
+  { id:"whatsapp",    label:"WhatsApp" },
+  { id:"instagram",   label:"Instagram" },
+  { id:"tienda",      label:"Tienda física" },
+  { id:"marketplace", label:"Marketplace" },
+  { id:"otro",        label:"Otro" },
+];
+
+export const TIPOS_DEVOLUCION = [
+  { id:"logistica", label:"Logística", emoji:"🚚", desc:"El paquete regresó: se perdió, hubo error de dirección o no lo recogieron." },
+  { id:"comercial", label:"Comercial", emoji:"👤", desc:"El cliente lo devolvió: talla, defecto o simplemente no le gustó." },
+];
+
+const IDS_ESTADO = ESTADOS.map(e => e.id);
+
+export const estadoDe        = (s) => ESTADOS.find(e => e.id === (s && s.status)) || ESTADOS[2];
+export const modalidadDe     = (s) => MODALIDADES.find(m => m.id === (s && s.modality)) || MODALIDADES[0];
+
+export const etiquetaAtribucion = (s) => {
+  const a = ATRIBUCIONES.find(x => x.id === (s && s.attribution));
+  if (!a) return "Sin atribuir";
+  if (a.id !== "publicidad") return a.label;
+  const p = PLATAFORMAS.find(x => x.id === (s && s.platform));
+  return `Publicidad · ${p ? p.label : (s.platform || "")}${s.campaign ? ` · ${s.campaign}` : ""}`;
+};
+
+export const etiquetaCanal = (s) => {
+  const c = CANALES_COMPRA.find(x => x.id === (s && s.channel));
+  return c ? c.label : "";
+};
+
+// ¿Esta venta YA es ingreso confirmado? (todo lo histórico lo es)
+export const esConfirmada = (s) => {
+  const st = s && s.status;
+  return !st || st === "entregado";
+};
+
+// Dinero que deja ESTA venta como ingreso confirmado (0 si no está confirmada)
+export const ingresoDe = (s) =>
+  esConfirmada(s) ? Math.max(0, (Number(s && s.total) || 0) - (Number(s && s.returnedAmount) || 0)) : 0;
+
+// Unidades de ESTA venta que cuentan como vendidas
+export const unidadesContadas = (s) =>
+  esConfirmada(s) ? Math.max(0, (Number(s && s.qty) || 0) - (Number(s && s.returnedQty) || 0)) : 0;
+
+export const esPendienteDeCobro = (s) => {
+  const st = s && s.status;
+  return st === "pendiente" || st === "enviado";
+};
+
+export const ingresosPendientes = (lista) =>
+  (lista || []).filter(esPendienteDeCobro).reduce((a, s) => a + (Number(s.total) || 0), 0);
+
+export const confirmadas = (lista) => (lista || []).filter(esConfirmada);
+
+// 🧮 Qué hay que moverle al producto cuando CAMBIA una venta
+//    (confirmar, cancelar, reabrir, editar…).  {stock, sold}
+//    · stock  → negativo = se reserva (descuenta); positivo = se devuelve
+//    · sold   → suma/resta el contador de "vendido"
+export const deltasProducto = (vieja, nueva) => {
+  const n = nueva || vieja;
+  const d = { stock: 0, sold: 0 };
+  const cancelV = !!(vieja && vieja.status === "cancelado");
+  const cancelN = !!(n && n.status === "cancelado");
+  const q = Number(vieja && vieja.qty) || 0;
+  if (cancelN && !cancelV) d.stock += q;   // cancelan → el stock vuelve
+  if (cancelV && !cancelN) d.stock -= q;   // reabren  → vuelve a reservarse
+  d.sold += unidadesContadas(n) - unidadesContadas(vieja);
+  return d;
+};
+
+// 🗑️ Borrar una venta: lo que hay que regresar al producto
+//    · cancelado  → su stock ya se devolvió al cancelar, no se devuelve dos veces
+//    · devuelto   → las unidades devueltas YA están en el estante (restada)
+//    · confirmado → vuelven todas las unidades que siguen en la venta
+export const deltasBorrado = (s) => {
+  const q = Number(s && s.qty) || 0;
+  const r = Number(s && s.returnedQty) || 0;
+  return {
+    stock: (s && s.status === "cancelado") ? 0 : Math.max(0, q - r),
+    sold: -unidadesContadas(s),
+  };
+};
+
 export const saleFromRow = (r) => {
   const m = leerMethod(r.method);
   return {
@@ -191,6 +320,20 @@ export const saleFromRow = (r) => {
     method: m.method,
     discount: m.discount || Number(r.discount) || 0,
     customerId: r.customer_id == null || r.customer_id === "" ? null : String(r.customer_id),
+    // 📦 ciclo de vida del pedido (migración 20261008000001)
+    modality: r.modality === "contraentrega" ? "contraentrega" : "pagada",
+    status: IDS_ESTADO.includes(r.status) ? r.status : "entregado",
+    confirmedAt: r.confirmed_at || "",
+    confirmedBy: r.confirmed_by || "",
+    returnedQty: Number(r.returned_qty) || 0,
+    returnedAmount: Number(r.returned_amount) || 0,
+    returnType: r.return_type || "",
+    returnedAt: r.returned_at || "",
+    // 🧲 atribución de la venta
+    attribution: r.attribution || "",
+    channel: r.channel || "",
+    platform: r.platform || "",
+    campaign: r.campaign || "",
   };
 };
 
@@ -204,6 +347,19 @@ export const saleToRow = (s, uid, ws) => ({
   date: s.date,
   method: methodConDescuento(s.method, s.discount),
   customer_id: s.customerId ? String(s.customerId) : null,
+  modality: s.modality === "contraentrega" ? "contraentrega" : "pagada",
+  status: IDS_ESTADO.includes(s.status) ? s.status : "entregado",
+  confirmed_at: s.confirmedAt || null,
+  confirmed_by: s.confirmedBy || null,
+  returned_qty: Math.max(0, Math.round(+s.returnedQty) || 0),
+  returned_amount: Math.max(0, +s.returnedAmount || 0),
+  return_type: s.returnType || null,
+  returned_at: s.returnedAt || null,
+  returned_by: s.returnedBy || null,
+  attribution: s.attribution || null,
+  channel: s.channel || null,
+  platform: s.platform || null,
+  campaign: s.campaign || null,
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -217,6 +373,9 @@ export const customerFromRow = (r) => ({
   email: r.email || "",
   notes: r.notes || "",
   createdAt: r.created_at || "",
+  // 🧲 de dónde salió el cliente (fuente) y por dónde compra (canal)
+  attribution: r.attribution || "",
+  channel: r.channel || "",
 });
 
 export const customerToRow = (c, uid, ws) => ({
@@ -228,6 +387,8 @@ export const customerToRow = (c, uid, ws) => ({
   phone: c.phone || "",
   email: c.email || "",
   notes: c.notes || "",
+  attribution: c.attribution || null,
+  channel: c.channel || null,
 });
 
 export const expenseFromRow = (r) => ({
@@ -238,6 +399,9 @@ export const expenseFromRow = (r) => ({
   dateEnd: r.date_end ? String(r.date_end).slice(0, 10) : "",
   category: r.category || "Otro",
   emoji: r.emoji || "💡",
+  // 📣 gasto publicitario: plataforma y campaña (se cuenta UNA sola vez)
+  platform: r.platform || "",
+  campaign: r.campaign || "",
 });
 
 export const expenseToRow = (e, uid, ws) => ({
@@ -250,6 +414,8 @@ export const expenseToRow = (e, uid, ws) => ({
   date_end: e.dateEnd || null,
   category: e.category || "Otro",
   emoji: e.emoji || "💡",
+  platform: e.platform || null,
+  campaign: e.campaign || null,
 });
 
 // ══════════════════════════════════════════════════════════════

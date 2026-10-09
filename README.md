@@ -20,6 +20,30 @@ npm run build
 npm run preview
 ```
 
+## 📲 PWA (instalable en celular y escritorio)
+
+| Archivo | Qué hace |
+|---|---|
+| `public/manifest.webmanifest` | Nombre, íconos, colores y modo "aplicación" (lo que ve el sistema para instalar) |
+| `public/sw.js` | Service worker: abre la app **sin internet** y siempre trae la versión nueva desde la red (nunca deja una app vieja cacheada) |
+| `src/lib/pwa.js` | Registra el SW **sólo en producción** y expone el botón `📲 Instalar app` del menú de usuario |
+| `public/favicon.svg` + `public/icons/` | Ícono de la pestaña y íconos de instalación (192/512/maskable/180) |
+| `scripts/gen-iconos.mjs` | Regenera los íconos PNG sin dependencias: `node scripts/gen-iconos.mjs` |
+
+El SW **no se registra en `npm run dev`** (para que nada quede cacheado al
+desarrollar). Para probarlo hay que compilar:
+
+```bash
+npm run build
+npm run preview   # http://localhost:4173
+```
+
+> ⚠️ Si modificas `public/sw.js`, sube `CACHE = "stokly-pwa-v1"` → `v2` para que
+> los visitantes descarten el caché anterior.
+>
+> ⚠️ Las rutas del manifest y del registro son **relativas** (`./`) a propósito:
+> así funcionan igual en la raíz (Vercel) y en subcarpeta (GitHub Pages).
+
 ## 📑 Secciones
 
 | Sección | Descripción |
