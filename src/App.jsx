@@ -1884,6 +1884,17 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
   // 📌 Fuente de verdad = las ventas registradas (si borras una, baja al instante)
   const vendidos = (p) => (unidadesR[p.id] || 0);
   const top5 = [...products].sort((a,b) => vendidos(b) - vendidos(a)).slice(0,5);
+  // 📊 MÉTRICAS en el Inicio — se calculan IGUAL que en la pestaña Métricas/Finanzas
+  //    (mismo rango, mismas fórmulas) para que nunca se contradigan.
+  const sC = confirmadas(sF);                                   // ventas que ya son ingreso
+  const mktExpR  = eF.filter(e=>e.category==="Marketing").reduce((a,e)=>a+e.amount,0);
+  const ingPubliR = sC.filter(s=>s.attribution==="publicidad").reduce((a,s)=>a+ingresoDe(s),0);
+  const roasR = mktExpR>0 ? ingPubliR/mktExpR : 0;              // ingreso de publicidad ÷ lo invertido
+  const merR  = mktExpR>0 ? totalSR/mktExpR : 0;                // ingreso total ÷ lo invertido
+  const cpaR  = sC.length>0 ? mktExpR/sC.length : 0;            // CPA por pedido confirmado
+  const entregadasR = sC.filter(s=>unidadesContadas(s)>0);
+  const costoVentaR = entregadasR.length ? mktExpR/entregadasR.length : 0;
+  const marginR = totalSR ? pct(profitR, totalSR) : 0;
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
       <DateRangeFilter rango={rango} onChange={setRango} />
@@ -1923,6 +1934,40 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
             <div style={{ fontSize:28, fontWeight:900, color:C.text }}>{k.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* 📊 MÉTRICAS — el mismo resumen de la pestaña Métricas, aquí al alcance */}
+      <div className="card" style={{ padding:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:14 }}>
+          <div className="section-title" style={{ marginBottom:0 }}>📊 Métricas{rango.id!=="todo" ? " · " + rangoLabel(rango) : ""}</div>
+          <button className="filter-btn" onClick={()=>setTab("metrics")} title="Ir a la pestaña Métricas">Ver todas las métricas →</button>
+        </div>
+        <div className="grid-4">
+          {[
+            { label:"Margen neto",  value:`${marginR}%`,                                    sub:"de lo vendido queda",   color:marginR>30?C.green:C.orange },
+            { label:"Ticket prom.", value:fmt(sC.length?Math.round(totalSR/sC.length):0),  sub:"por pedido cobrado",    color:C.blue },
+            { label:"ROAS",         value:roasR>0?`${roasR.toFixed(1)}×`:"—",              sub:"lo que rindió la publi",color:roasR>=3?C.green:C.muted },
+            { label:"MER",          value:merR>0?`${merR.toFixed(1)}×`:"—",                sub:"ventas ÷ publicidad",   color:merR>=3?C.green:C.muted },
+          ].map(k=>(
+            <div key={k.label} className="stat-card" style={{ background:C.bg }}>
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", marginBottom:4 }}>{k.label}</div>
+              <div style={{ fontSize:26, fontWeight:900, color:k.color, marginBottom:2 }}>{k.value}</div>
+              <div style={{ fontSize:10, fontWeight:700, color:C.muted, lineHeight:1.35 }}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+        {/* 📣 Publicidad: sólo si hay gasto de marketing registrado en Gastos */}
+        {mktExpR>0 ? (
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:12 }}>
+            <span className="pill" style={{ background:C.purpleLight, color:C.purple, fontSize:11, padding:"5px 11px", fontWeight:900 }} title="Gasto de publicidad (Gastos → Marketing). Se cuenta UNA sola vez.">📣 {fmt(mktExpR)} invertidos</span>
+            <span className="pill" style={{ background:C.bg, color:C.muted, fontSize:11, padding:"5px 11px", fontWeight:900 }} title="CPA = gasto publicitario ÷ pedidos confirmados">CPA {fmt(cpaR)}</span>
+            <span className="pill" style={{ background:C.bg, color:C.muted, fontSize:11, padding:"5px 11px", fontWeight:900 }} title="Costo por venta = gasto publicitario ÷ ventas entregadas">Costo por venta {fmt(costoVentaR)}</span>
+          </div>
+        ) : (
+          <div style={{ fontSize:11.5, fontWeight:700, color:C.muted, marginTop:12, lineHeight:1.5 }}>
+            📣 Sin gasto de publicidad en este rango — registra uno en <b>Gastos → Marketing</b> para ver ROAS, MER y CPA.
+          </div>
+        )}
       </div>
 
       {/* Quick actions + alerts */}
