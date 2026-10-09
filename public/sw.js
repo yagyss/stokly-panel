@@ -12,7 +12,7 @@
 //  ¿Al cambiar el código del SW? Sube el número de CACHE (v1→v2).
 // ============================================================
 
-const CACHE = "stokly-pwa-v1";
+const CACHE = "stokly-pwa-v2";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./favicon.svg"];
 
 self.addEventListener("install", (evento) => {
