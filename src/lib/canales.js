@@ -22,6 +22,9 @@ const qs = (params = {}) => {
 };
 
 const mensajeDe = (d, estado) => {
+  // 401 = la sesión del navegador ya no sirve: lo decimos en palabras claras
+  // (aunque el proveedor devuelva "No autorizado").
+  if (estado === 401) return "Tu sesión expiró: cierra sesión y vuelve a entrar.";
   if (!d) return `El proveedor no respondió (código ${estado})`;
   if (typeof d === "string") return d;
   const candidatos = [
@@ -35,7 +38,6 @@ const mensajeDe = (d, estado) => {
     Array.isArray(d.manualSteps) && d.manualSteps[0]?.description,
   ].filter(Boolean);
   if (candidatos.length) return String(candidatos[0]);
-  if (estado === 401) return "La sesión expiró: cierra sesión y vuelve a entrar";
   if (estado === 429) return "Demasiadas peticiones seguidas: espera un minuto";
   return `El proveedor respondió con error (${estado})`;
 };
