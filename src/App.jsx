@@ -4,6 +4,9 @@ import { supabase } from "./lib/supabase.js";
 import { useInstalable, INSTRUCCIONES_INSTALAR } from "./lib/pwa.js";
 import AuthScreen from "./components/AuthScreen.jsx";
 import TeamModal from "./components/TeamModal.jsx";
+import WhatsApp from "./components/WhatsApp.jsx";
+import Integraciones from "./components/Integraciones.jsx";
+import Mensajes from "./components/Mensajes.jsx";
 import {
   useAuth,
   useSyncedTable,
@@ -58,6 +61,20 @@ const TABS = [
   { id: "finance",   label: "Finanzas",   emoji: "📈", desc: "Flujo de caja" },
   { id: "metrics",   label: "Métricas",   emoji: "📊", desc: "Análisis avanzado" },
 ];
+
+// 📣 Canales: secciones nuevas. En el escritorio van al menú lateral;
+// en el celular entran por el botón "☰ Más" de la barra de abajo.
+const TABS_CANAL = [
+  { id: "whatsapp",      label: "WhatsApp",      emoji: "💬", desc: "Números y plantillas" },
+  { id: "integraciones", label: "Integraciones", emoji: "🔌", desc: "Canales y agente IA" },
+  { id: "mensajes",      label: "Mensajes",      emoji: "📨", desc: "Bandeja de entrada" },
+];
+const TODAS_TABS = [...TABS, ...TABS_CANAL];
+const COLOR_SECCION = {
+  home: C.greenLight, inventory: C.blueLight, sales: C.greenLight, expenses: C.orangeLight,
+  finance: C.tealLight, metrics: C.purpleLight, whatsapp: "#E7F9EF", integraciones: C.blueLight,
+  mensajes: C.yellowLight, crm: C.purpleLight,
+};
 
 const TAB_CRM = { id: "crm", label: "Clientes (CRM)", emoji: "👥", desc: "Fichas y compras" };
 
@@ -1472,7 +1489,7 @@ function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
 
       {/* Nav items */}
       <nav style={{ padding:"0 12px", flex:1 }}>
-        {TABS.map(t => (
+        {TODAS_TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"11px 14px", borderRadius:14, border:"none", cursor:"pointer", fontFamily:"inherit", marginBottom:4, background: tab===t.id ? "rgba(0,200,150,0.12)" : "none", transition:"all 0.15s" }}>
             <span style={{ fontSize:20 }}>{t.emoji}</span>
             <div style={{ textAlign:"left" }}>
@@ -1522,7 +1539,10 @@ function Splash({ text }) {
 export default function Stokly() {
   const { user, initializing, signOut } = useAuth();
   const { memberships, status: mStatus, refresh: refreshMemberships } = useMemberships(user?.id);
-  const [tab, setTab] = useState("home");
+  // Si volvimos de conectar un canal (#canales?code=…) abramos Integraciones
+  const [tab, setTab] = useState(() =>
+    (window.location.hash || "").startsWith("#canales") ? "integraciones" : "home"
+  );
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [importView, setImportView] = useState("file"); // file | sheet
@@ -1614,7 +1634,7 @@ export default function Stokly() {
   const totalExpenses = expenses.reduce((a,e) => a+e.amount, 0);
   const profit = totalSales - totalExpenses;
   // 📱 Clientes (CRM) entra como sección de la plataforma (no como ventana flotante)
-  const currentTab = TABS.find(t => t.id === tab) || (tab === "crm" ? TAB_CRM : null);
+  const currentTab = TODAS_TABS.find(t => t.id === tab) || (tab === "crm" ? TAB_CRM : null);
 
   return (
     <div className="app-root">
@@ -1730,6 +1750,10 @@ export default function Stokly() {
           {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
           {/* 👥 Clientes: sección integrada (igual que Ventas / Métricas) */}
           {tab==="crm"       && <CrmModal  customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} showToast={showToast} isMobile={isMobile} embebido />}
+          {/* 📣 Canales: WhatsApp, Integraciones y Mensajes */}
+          {tab==="whatsapp"      && <WhatsApp      isMobile={isMobile} showToast={showToast} setTab={setTab} />}
+          {tab==="integraciones" && <Integraciones isMobile={isMobile} showToast={showToast} setTab={setTab} />}
+          {tab==="mensajes"      && <Mensajes      products={products} setTab={setTab} isMobile={isMobile} showToast={showToast} />}
         </div>
       </div>
 
@@ -1746,6 +1770,15 @@ export default function Stokly() {
             </button>
           </Fragment>
         ))}
+        {/* ☰ Más: WhatsApp, Integraciones, Mensajes y todas las secciones */}
+        <button
+          className={`tab-btn-mob ${modal==="mas" || TABS_CANAL.some(t=>t.id===tab) ? "active":""}`}
+          onClick={() => setModal("mas")}
+          title="Todas las secciones"
+        >
+          <span style={{ fontSize:20 }}>☰</span>
+          <span style={{ fontSize:9, fontWeight:800, color: modal==="mas" || TABS_CANAL.some(t=>t.id===tab) ? C.green : C.muted }}>Más</span>
+        </button>
       </div>
 
       {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => {
@@ -1778,6 +1811,22 @@ export default function Stokly() {
             { emoji:"💰", title:"Agregar venta", desc:"Registrar una venta rápidamente", bg:C.greenLight, color:C.green, action:() => setModal("sale") },
             { emoji:"💸", title:"Agregar gasto", desc:"Registrar un gasto rápidamente", bg:C.orangeLight, color:C.orange, action:() => setModal("expense") },
           ]}
+        />
+      )}
+      {/* ☰ Más: todas las secciones (en el celular, las de canales viven acá) */}
+      {modal==="mas" && (
+        <OptionPickerModal
+          title="☰ Todas las secciones"
+          subtitle="Elige a dónde ir"
+          onClose={() => setModal(null)}
+          options={[...TODAS_TABS, TAB_CRM].map(t => ({
+            emoji: t.emoji,
+            title: t.label,
+            desc: t.desc,
+            bg: COLOR_SECCION[t.id] || C.blueLight,
+            color: C.green,
+            action: () => { setModal(null); setTab(t.id); },
+          }))}
         />
       )}
       {modal==="import"  && <ImportModal    importView={importView} workspaceId={workspaceId} onClose={() => setModal(null)} onImport={(newP,mode,aviso) => {

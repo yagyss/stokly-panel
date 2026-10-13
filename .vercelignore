@@ -1,0 +1,10 @@
+# Solo afecta a los deploys que hago desde la CLI (los de GitHub no lo leen).
+node_modules
+dist
+.git
+.env
+.env.local
+.env.*
+*.log
+.github
+supabase
