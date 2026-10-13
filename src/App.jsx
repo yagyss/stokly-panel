@@ -1489,7 +1489,7 @@ function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
 
       {/* Nav items */}
       <nav style={{ padding:"0 12px", flex:1 }}>
-        {TODAS_TABS.map(t => (
+        {[...TODAS_TABS, TAB_CRM].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"11px 14px", borderRadius:14, border:"none", cursor:"pointer", fontFamily:"inherit", marginBottom:4, background: tab===t.id ? "rgba(0,200,150,0.12)" : "none", transition:"all 0.15s" }}>
             <span style={{ fontSize:20 }}>{t.emoji}</span>
             <div style={{ textAlign:"left" }}>
@@ -1540,9 +1540,13 @@ export default function Stokly() {
   const { user, initializing, signOut } = useAuth();
   const { memberships, status: mStatus, refresh: refreshMemberships } = useMemberships(user?.id);
   // Si volvimos de conectar un canal (#canales?code=…) abramos Integraciones
-  const [tab, setTab] = useState(() =>
-    (window.location.hash || "").startsWith("#canales") ? "integraciones" : "home"
-  );
+  const [tab, setTab] = useState(() => {
+    const h = window.location.hash || "";
+    if (!h.startsWith("#canales")) return "home";
+    // Vuelve de conectar: la sección de destino viene en el propio enlace
+    const s = new URLSearchParams(h.includes("?") ? h.slice(h.indexOf("?") + 1) : "").get("seccion");
+    return TODAS_TABS.some(t => t.id === s) ? s : "integraciones";
+  });
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [importView, setImportView] = useState("file"); // file | sheet
@@ -1647,9 +1651,19 @@ export default function Stokly() {
       <div className="main-wrap">
         {/* Topbar */}
         <div className="topbar">
-          <div>
-            <div style={{ fontWeight:900, fontSize:isMobile?18:22, color:C.text }}>{isMobile ? "stokly 📦" : `${currentTab?.emoji} ${currentTab?.label}`}</div>
-            <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{isMobile ? ((negocio && negocio.name) || "Tu negocio bajo control") : currentTab?.desc}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+            {isMobile && (
+              <button
+                onClick={() => setModal("mas")}
+                title="Todas las secciones"
+                aria-label="Menú de secciones"
+                style={{ width:38, height:38, borderRadius:12, border:`1.5px solid ${C.border}`, background:C.white, color:C.text, fontSize:17, cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}
+              >☰</button>
+            )}
+            <div>
+              <div style={{ fontWeight:900, fontSize:isMobile?18:22, color:C.text }}>{isMobile ? "stokly 📦" : `${currentTab?.emoji} ${currentTab?.label}`}</div>
+              <div style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{isMobile ? ((negocio && negocio.name) || "Tu negocio bajo control") : currentTab?.desc}</div>
+            </div>
           </div>
           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
             {lowStock.length>0 && isMobile && (
@@ -1751,7 +1765,7 @@ export default function Stokly() {
           {/* 👥 Clientes: sección integrada (igual que Ventas / Métricas) */}
           {tab==="crm"       && <CrmModal  customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} showToast={showToast} isMobile={isMobile} embebido />}
           {/* 📣 Canales: WhatsApp, Integraciones y Mensajes */}
-          {tab==="whatsapp"      && <WhatsApp      isMobile={isMobile} showToast={showToast} setTab={setTab} />}
+          {tab==="whatsapp"      && <WhatsApp      isMobile={isMobile} showToast={showToast} setTab={setTab} negocio={negocio} />}
           {tab==="integraciones" && <Integraciones isMobile={isMobile} showToast={showToast} setTab={setTab} />}
           {tab==="mensajes"      && <Mensajes      products={products} setTab={setTab} isMobile={isMobile} showToast={showToast} />}
         </div>
@@ -1770,15 +1784,6 @@ export default function Stokly() {
             </button>
           </Fragment>
         ))}
-        {/* ☰ Más: WhatsApp, Integraciones, Mensajes y todas las secciones */}
-        <button
-          className={`tab-btn-mob ${modal==="mas" || TABS_CANAL.some(t=>t.id===tab) ? "active":""}`}
-          onClick={() => setModal("mas")}
-          title="Todas las secciones"
-        >
-          <span style={{ fontSize:20 }}>☰</span>
-          <span style={{ fontSize:9, fontWeight:800, color: modal==="mas" || TABS_CANAL.some(t=>t.id===tab) ? C.green : C.muted }}>Más</span>
-        </button>
       </div>
 
       {modal==="product" && <AddProductModal onClose={() => setModal(null)} workspaceId={workspaceId} showToast={showToast} onSave={p => {

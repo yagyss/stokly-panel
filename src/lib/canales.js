@@ -94,8 +94,11 @@ export const cuentas = (params) => canales("/accounts" + qs(params));
 export const cuenta = (accountId) => canales(`/accounts/${accountId}`);
 
 // ── Conectar una red social (flujo blanca: nunca se ve el proveedor) ──
-export const urlConectar = async (plataforma, { perfilId, redirect, scopes, hosted, brandName, color, idioma } = {}) => {
-  const d = await canales(
+// Devuelve la respuesta COMPLETA: para la mayoría de redes trae
+// { authUrl } (hay que abrir ese enlace), pero Telegram devuelve
+// { code, botUsername, instructions } (hay que enviarle el código al bot).
+export const conectarRed = (plataforma, { perfilId, redirect, scopes, hosted, brandName, color, idioma } = {}) =>
+  canales(
     `/connect/${plataforma}` +
       qs({
         profileId: perfilId,
@@ -109,6 +112,9 @@ export const urlConectar = async (plataforma, { perfilId, redirect, scopes, host
         language: idioma,
       })
   );
+
+export const urlConectar = async (plataforma, opciones) => {
+  const d = await conectarRed(plataforma, opciones);
   return d?.authUrl || d?.url || "";
 };
 export const completarConectar = (plataforma, cuerpo) =>

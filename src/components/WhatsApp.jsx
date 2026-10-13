@@ -45,11 +45,12 @@ const cargarScriptFacebook = () =>
     setTimeout(() => reject(new Error("El popup de Meta tardó demasiado")), 12000);
   });
 
-export default function WhatsApp({ isMobile, showToast, setTab }) {
+export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   const [cuentaWhats, setCuentaWhats] = useState([]);
   const [cargandoCuentas, setCargandoCuentas] = useState(true);
   const [errorCuentas, setErrorCuentas] = useState("");
   const [conectando, setConectando] = useState(false);
+  const [cfgMeta, setCfgMeta] = useState(null); // datos del popup oficial, cargados al abrir la sección
   const [cuentaSel, setCuentaSel] = useState("");
   const [lista, setLista] = useState([]);
   const [cargandoPl, setCargandoPl] = useState(true);
@@ -93,20 +94,63 @@ export default function WhatsApp({ isMobile, showToast, setTab }) {
 
   useEffect(() => { cargarCuentas(); }, [cargarCuentas]);
   useEffect(() => { cargarPlantillas(); }, [cargarPlantillas]);
+
+  // Volvimos de conectar el número (misma pestaña): limpiamos el enlace
+  useEffect(() => {
+    if ((window.location.hash || "").startsWith("#canales")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
+
+  // Traemos los datos del popup oficial de Meta sólo cuando aún no hay
+  // número conectado: así, al pulsar el botón no hay que esperar nada
+  // (si no, el navegador bloquea la ventana por venir de una promesa).
+  useEffect(() => {
+    if (cuentaWhats.length) return;
+    canales("/connect/whatsapp/sdk-config")
+      .then((d) => { if (d?.appId && d?.configId) setCfgMeta(d); })
+      .catch(() => {});
+  }, [cuentaWhats.length]);
+
   // Estado de las plantillas: Meta tarda hasta 24 h, así que se refresca
   useEffect(() => {
     const t = setInterval(() => { if (cuentaSel) cargarPlantillas(true); }, 45000);
     return () => clearInterval(t);
   }, [cuentaSel, cargarPlantillas]);
 
-  // ── Conectar número ────────────────────────────────────────
+  // ── Conectar número (opción principal: página oficial con tu negocio) ──
   const conectar = async () => {
     setConectando(true);
     try {
       const perfil = await perfiles();
       const perfilId = perfil?.profiles?.[0]?._id;
       if (!perfilId) throw new Error("No se encontró tu perfil");
-      const cfg = await canales("/connect/whatsapp/sdk-config");
+      const url = await urlConectar("whatsapp", {
+        perfilId,
+        redirect: window.location.origin + window.location.pathname + "#canales?seccion=whatsapp",
+        hosted: true,
+        brandName: (negocio && negocio.name) || "Mi negocio",
+        idioma: "es",
+      });
+      if (!url) throw new Error("No se pudo abrir la conexión");
+      // Misma pestaña: evita que el navegador bloquee la ventana
+      window.location.href = url;
+    } catch (e) {
+      setConectando(false);
+      showToast("⚠️ " + e.message);
+    }
+  };
+
+  // ── Conectar número (opción directa: ventana oficial de Meta) ──
+  const conectarDirecto = async () => {
+    setConectando(true);
+    try {
+      const perfil = await perfiles();
+      const perfilId = perfil?.profiles?.[0]?._id;
+      if (!perfilId) throw new Error("No se encontró tu perfil");
+      const cfg = cfgMeta || (await canales("/connect/whatsapp/sdk-config"));
+      if (!cfg?.appId || !cfg?.configId) throw new Error("Meta no está disponible ahora: usa la opción principal");
+      setCfgMeta(cfg);
       await cargarScriptFacebook();
       window.FB.init({ appId: cfg.appId, cookie: false, xfbml: false, version: "v21.0" });
       window.FB.login(
@@ -130,20 +174,6 @@ export default function WhatsApp({ isMobile, showToast, setTab }) {
       setConectando(false);
       showToast("⚠️ " + e.message);
     }
-  };
-
-  const enlaceAsistido = async () => {
-    try {
-      const perfil = await perfiles();
-      const perfilId = perfil?.profiles?.[0]?._id;
-      const url = await urlConectar("whatsapp", {
-        perfilId,
-        redirect: window.location.origin + window.location.pathname + "#canales",
-        hosted: true,
-      });
-      if (url) window.open(url, "_blank", "noopener");
-      else showToast("⚠️ No se pudo abrir la conexión");
-    } catch (e) { showToast("⚠️ " + e.message); }
   };
 
   // ── Crear plantilla ────────────────────────────────────────
@@ -202,11 +232,14 @@ export default function WhatsApp({ isMobile, showToast, setTab }) {
               Todavía no hay ningún número conectado. Al conectarlo, WhatsApp Business quedará ligado a <b>tu negocio</b> con la
               API oficial de Meta (los mensajes salen desde tu propio número, con tus plantillas y tu agente).
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn-main" onClick={conectar} disabled={conectando} style={{ opacity: conectando ? 0.7 : 1 }}>
                 {conectando ? "Abriendo WhatsApp…" : "💬 Conectar mi número"}
               </button>
-              <button className="filter-btn" onClick={enlaceAsistido} title="Si el botón no abre, usa esta vía">Conexión asistida ↗</button>
+              <button className="filter-btn" onClick={conectarDirecto} disabled={conectando} title="Ventana directa de Meta (si la principal no abre)">Conexión directa ↗</button>
+            </div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: C.muted, marginTop: 10, lineHeight: 1.6 }}>
+              Se abre la página oficial de WhatsApp para vincular <b>tu</b> número con la API de Meta: solo tú inicias sesión ahí.
             </div>
           </div>
         )}
