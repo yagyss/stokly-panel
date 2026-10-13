@@ -124,18 +124,23 @@ export default async function handler(req, res) {
     // Origen desconocido: no es el panel de stokly. Se responde igual
     // (el navegador del intruso lo bloquearía igualmente por CORS),
     // pero se corta antes de gastar llamadas al proveedor.
+    console.log(`[canales] 403 origen no permitido · ${req.method} · ${origen || "(sin origin)"}`);
     return json(res, 403, { error: "Origen no permitido" });
   }
 
   const cupo = cuposDe(ip);
   if (cupo.n >= 240) {
+    console.log(`[canales] 429 límite de peticiones · ${req.method}`);
     return json(res, 429, { error: "Demasiadas peticiones, espera un minuto" });
   }
   cupo.n += 1;
 
   // --- 1) ¿Quién llama? (sesión de stokly) ----------------------
   const usuario = await usuarioDe(req);
-  if (!usuario) return json(res, 401, { error: "No autorizado" });
+  if (!usuario) {
+    console.log(`[canales] 401 sin sesión válida · ${req.method}`);
+    return json(res, 401, { error: "No autorizado" });
+  }
 
   // --- 2) ¿Qué ruta pide? --------------------------------------
   let ruta = req.headers["x-path"];
@@ -174,6 +179,16 @@ export default async function handler(req, res) {
       body: cuerpo,
     });
     const texto = await r.text();
+    // Diagnóstico para los logs del servidor: qué se pidió y qué forma
+    // devolvió (sólo claves, nunca valores: así no se filtran tokens).
+    let forma = "vacío";
+    try {
+      const j = JSON.parse(texto);
+      forma = Array.isArray(j) ? `array(${j.length})` : Object.keys(j).join(",");
+    } catch {
+      if (texto) forma = "no-json";
+    }
+    console.log(`[canales] ${req.method} ${soloRuta} → ${r.status} ${forma}`);
     res.statusCode = r.status;
     res.setHeader(
       "Content-Type",

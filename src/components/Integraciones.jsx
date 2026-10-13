@@ -50,9 +50,21 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // El perfil se pide arriba, pero si todavía no llegó (o falló la carga)
+  // lo traemos aquí: el botón "Conectar" nunca debe quedarse sin saberlo.
+  const traerPerfil = useCallback(async () => {
+    if (perfilId) return perfilId;
+    const p = await perfiles();
+    const id = p?.profiles?.[0]?._id || "";
+    if (id) setPerfilId(id);
+    return id;
+  }, [perfilId]);
+
   // ── Vuelve de conectar una red (#canales?redes=instagram&code=…) ──
-  //  · No borramos nada hasta tener el perfil: si el `code` OAuth se
-  //    pierde, la cuenta queda sin conectar y nadie se entera.
+  //  · El `code` OAuth viaja en el propio enlace, así que no dependemos
+  //    de la memoria del navegador; y si el perfil aún no cargó, lo
+  //    traemos aquí antes de intercambiarlo (antes se perdía y la cuenta
+  //    quedaba sin conectar, sin aviso).
   useEffect(() => {
     const hash = window.location.hash || "";
     if (!hash.startsWith("#canales")) return;
@@ -64,19 +76,23 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
     const pendiente = sessionStorage.getItem("stokly_canal_pendiente") || "";
     const selector = sessionStorage.getItem("stokly_canal_selector") === "1";
 
-    // Esperamos a que termine de cargar el perfil antes de intercambiar el código
-    if (codigo && !perfilId && cargando) return;
-
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
     sessionStorage.removeItem("stokly_canal_pendiente");
     sessionStorage.removeItem("stokly_canal_selector");
 
     if (codigo) {
       const red = redHash || pendiente;
-      if (!red || !perfilId) { showToast("⚠️ No se pudo completar la conexión: vuelve a intentarlo"); return; }
-      completarConectar(red, { code: codigo, state, profileId: perfilId })
-        .then(() => { showToast("✅ Canal conectado"); cargar(); })
-        .catch((e) => showToast("⚠️ " + e.message));
+      (async () => {
+        const pid = perfilId || await traerPerfil().catch(() => "");
+        if (!red || !pid) { showToast("⚠️ No se pudo completar la conexión: vuelve a intentarlo"); return; }
+        try {
+          await completarConectar(red, { code: codigo, state, profileId: pid });
+          showToast("✅ Canal conectado");
+          cargar();
+        } catch (e) {
+          showToast("⚠️ " + e.message);
+        }
+      })();
     } else if (fallo) {
       showToast("⚠️ " + fallo);
     } else if (pendiente || redHash) {
@@ -86,16 +102,19 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
       else { showToast("ℹ️ Conexión cancelada"); }
       cargar();
     }
-  }, [perfilId, cargando, cargar, showToast]);
+  }, [perfilId, traerPerfil, cargar, showToast]);
 
   const conectar = async (id) => {
     if (id === "whatsapp") { setTab("whatsapp"); return; }
-    if (!perfilId) { showToast("⚠️ No se encontró tu perfil"); return; }
     setOcupado(id);
     try {
+      // Traemos el perfil aquí mismo: así no importa si la sección
+      // todavía estaba cargando cuando se pulsó el botón.
+      const pid = await traerPerfil();
+      if (!pid) throw new Error("No encontramos tu perfil. Pulsa ↻ Actualizar e inténtalo de nuevo.");
       const conSelector = FLUJO_SELECTOR.includes(id);
       const datos = await conectarRed(id, {
-        perfilId,
+        perfilId: pid,
         redirect: REDIRECCION(id),
         hosted: false,
         ...(conSelector ? { headless: false } : {}),
@@ -109,7 +128,11 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
         showToast("ℹ️ Telegram te da un código: mándaselo al bot y queda conectado");
         return;
       }
-      if (!url) throw new Error("La plataforma no devolvió el enlace de conexión");
+      if (!url) {
+        // Algo raro devolvió la red: lo decimos con detalle para poder verlo
+        const detalle = !datos ? "vacía" : typeof datos === "object" ? Object.keys(datos).join(", ") : String(datos).slice(0, 60);
+        throw new Error(`La red no devolvió el enlace de conexión (respuesta: ${detalle}). Reintenta en unos segundos.`);
+      }
 
       sessionStorage.setItem("stokly_canal_pendiente", id);
       sessionStorage.setItem("stokly_canal_selector", conSelector ? "1" : "");
