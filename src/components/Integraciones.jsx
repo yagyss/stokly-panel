@@ -8,7 +8,7 @@
 //     límites de uso y datos en vivo del inventario).
 // ============================================================
 import { useCallback, useEffect, useState } from "react";
-import { cuentas, perfiles, conectarRed, completarConectar, plataforma, PLATAFORMAS } from "../lib/canales.js";
+import { cuentas, perfiles, conectarRed, completarConectar, plataforma, PLATAFORMAS, paramsCallback, limpiarUrl, errorAmigable } from "../lib/canales.js";
 import { C } from "../lib/paleta.js";
 import AgenteIA from "./AgenteIA.jsx";
 
@@ -33,6 +33,7 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState("");
   const [codigoRed, setCodigoRed] = useState(null); // { code, botUsername, instructions, expiresAt }
+  const [verificando, setVerificando] = useState(""); // red que se está comprobando tras volver
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -60,49 +61,101 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
     return id;
   }, [perfilId]);
 
-  // ── Vuelve de conectar una red (#canales?redes=instagram&code=…) ──
-  //  · El `code` OAuth viaja en el propio enlace, así que no dependemos
-  //    de la memoria del navegador; y si el perfil aún no cargó, lo
-  //    traemos aquí antes de intercambiarlo (antes se perdía y la cuenta
-  //    quedaba sin conectar, sin aviso).
+  // ── Vuelve de conectar una red ───────────────────────────────
+  //  · El proveedor entrega SU resultado en la cadena de consulta
+  //    (?connected=facebook&username=… o ?code=…&state=…) y stokly marca
+  //    el destino en el fragmento (#canales?redes=facebook). Se leen los
+  //    DOS sitios: antes sólo se miraba el fragmento, el resultado se
+  //    perdía y la cuenta quedaba sin conectar sin ningún aviso.
   useEffect(() => {
-    const hash = window.location.hash || "";
-    if (!hash.startsWith("#canales")) return;
-    const params = new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "");
-    const codigo = params.get("code");
-    const state = params.get("state");
-    const fallo = params.get("error") || params.get("error_message");
-    const redHash = params.get("redes") || "";
+    const p = paramsCallback();
+    const codigo = p.get("code");
+    const state = p.get("state");
+    const fallo = p.get("error");
+    const msgFallo = p.get("error_message");
+    const conectado = p.get("connected");
+    const usuario = p.get("username");
+    const redHash = p.get("redes") || "";
     const pendiente = sessionStorage.getItem("stokly_canal_pendiente") || "";
     const selector = sessionStorage.getItem("stokly_canal_selector") === "1";
 
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const llegamosDeConectar = codigo || fallo || conectado || pendiente || redHash;
+    if (!llegamosDeConectar) return;
+
+    limpiarUrl();
     sessionStorage.removeItem("stokly_canal_pendiente");
     sessionStorage.removeItem("stokly_canal_selector");
 
     if (codigo) {
-      const red = redHash || pendiente;
+      // Flujo con intercambio directo del código (Instagram, TikTok…)
+      const red = conectado || redHash || pendiente;
       (async () => {
         const pid = perfilId || await traerPerfil().catch(() => "");
         if (!red || !pid) { showToast("⚠️ No se pudo completar la conexión: vuelve a intentarlo"); return; }
         try {
           await completarConectar(red, { code: codigo, state, profileId: pid });
-          showToast("✅ Canal conectado");
-          cargar();
+          showToast(`✅ ${plataforma(red).nombre} conectado: buscando la cuenta…`);
+          setVerificando(red);
         } catch (e) {
           showToast("⚠️ " + e.message);
+          cargar();
         }
       })();
     } else if (fallo) {
-      showToast("⚠️ " + fallo);
-    } else if (pendiente || redHash) {
-      // Volvió sin código: en el flujo con selector la cuenta ya quedó
-      // creada del lado del proveedor; en el flujo directo fue un cancelado.
-      if (selector) { showToast("✅ Canal conectado"); }
-      else { showToast("ℹ️ Conexión cancelada"); }
+      showToast("⚠️ " + errorAmigable(fallo, msgFallo));
+      cargar();
+    } else if (conectado) {
+      // Flujo con selector (Facebook, Google Business…): el proveedor ya
+      // creó la cuenta y nos lo cuenta con connected=<red>
+      showToast(`✅ ${plataforma(conectado).nombre} conectado${usuario ? ` · ${usuario}` : ""}: buscando la cuenta…`);
+      setVerificando(conectado);
+    } else {
+      // Volvió sin resultado en la URL: en el flujo con selector la cuenta
+      // ya quedó creada del lado del proveedor; lo demás fue un cancelado.
+      const red = redHash || pendiente;
+      if (selector) {
+        showToast("✅ Canal conectado: buscando la cuenta…");
+        if (red) setVerificando(red);
+      } else {
+        showToast("ℹ️ Conexión cancelada");
+      }
       cargar();
     }
   }, [perfilId, traerPerfil, cargar, showToast]);
+
+  // ── La cuenta tarda unos segundos en aparecer: la buscamos sola ──
+  // Así, al volver de conectar, la tarjeta se pinta en verde sola y con
+  // aviso; si nunca aparece, se dice claramente (antes: silencio).
+  useEffect(() => {
+    if (!verificando) return;
+    let vivo = true;
+    let intentos = 0;
+    let t = null;
+    const revisar = async () => {
+      intentos += 1;
+      try {
+        const c = await cuentas();
+        const arr = Array.isArray(c?.accounts) ? c.accounts : [];
+        if (!vivo) return;
+        setCuenta(arr);
+        const nueva = arr.find((x) => x.platform === verificando);
+        if (nueva) {
+          clearInterval(t);
+          setVerificando("");
+          showToast(`✅ ${plataforma(verificando).nombre} conectado${nueva.username ? ` · ${nueva.username}` : ""}`);
+        } else if (intentos >= 11) {
+          clearInterval(t);
+          setVerificando("");
+          showToast(`ℹ️ ${plataforma(verificando).nombre} todavía no aparece conectado. Revisa en esa red si quedó autorizado y pulsa ↻ Actualizar.`);
+        }
+      } catch {
+        if (intentos >= 11 && vivo) { clearInterval(t); setVerificando(""); }
+      }
+    };
+    revisar();
+    t = setInterval(revisar, 4000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [verificando, showToast]);
 
   const conectar = async (id) => {
     if (id === "whatsapp") { setTab("whatsapp"); return; }
@@ -152,7 +205,20 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
       <div className="card" style={{ padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
           <div className="section-title" style={{ marginBottom: 0 }}>🔌 Tus canales</div>
-          <button className="filter-btn" onClick={cargar}>↻ Actualizar</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span
+              className="pill"
+              style={{
+                fontSize: 11.5, fontWeight: 900, padding: "5px 11px", borderRadius: 999,
+                background: cuenta.length ? "#E7F7F0" : C.bg,
+                color: cuenta.length ? "#0B7A5B" : C.muted,
+                border: `1.5px solid ${cuenta.length ? C.green : C.border}`,
+              }}
+            >
+              {cuenta.length ? `✅ ${cuenta.length} conectado${cuenta.length > 1 ? "s" : ""}` : "○ sin conectar"}
+            </span>
+            <button className="filter-btn" onClick={cargar}>↻ Actualizar</button>
+          </div>
         </div>
         <div style={{ fontSize: 12.5, fontWeight: 600, color: C.muted, lineHeight: 1.6, marginBottom: 14 }}>
           Cada canal conectado recibe y envía mensajes desde la pestaña <b>Mensajes</b>. Conectas con la ventana oficial de cada
@@ -180,6 +246,17 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
                     {p.emoji}
                   </div>
                   <div style={{ fontWeight: 900, fontSize: 13.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nombre}</div>
+                  {conectado && (
+                    <span
+                      style={{
+                        marginLeft: "auto", fontSize: 10, fontWeight: 900, color: "#0B7A5B",
+                        background: "#D9F3E7", border: `1px solid ${C.green}`, borderRadius: 999,
+                        padding: "3px 8px", whiteSpace: "nowrap", flexShrink: 0,
+                      }}
+                    >
+                      ✅ Conectado
+                    </span>
+                  )}
                 </div>
 
                 {conectado ? (
@@ -195,15 +272,22 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
                     </button>
                   </div>
                 ) : (
-                  <button
-                    className="filter-btn"
-                    onClick={() => conectar(p.id)}
-                    disabled={ocupado === p.id}
-                    style={{ width: "100%" }}
-                    title={p.id === "whatsapp" ? "Conectar número de WhatsApp" : `Conectar ${p.nombre}`}
-                  >
-                    {ocupado === p.id ? "Abriendo…" : p.id === "whatsapp" ? "Conectar →" : "＋ Conectar"}
-                  </button>
+                  <div>
+                    {verificando === p.id && (
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: C.muted, marginBottom: 6, lineHeight: 1.4 }}>
+                        ⏳ Buscando la cuenta conectada…
+                      </div>
+                    )}
+                    <button
+                      className="filter-btn"
+                      onClick={() => conectar(p.id)}
+                      disabled={ocupado === p.id}
+                      style={{ width: "100%" }}
+                      title={p.id === "whatsapp" ? "Conectar número de WhatsApp" : `Conectar ${p.nombre}`}
+                    >
+                      {ocupado === p.id ? "Abriendo…" : p.id === "whatsapp" ? "Conectar →" : "＋ Conectar"}
+                    </button>
+                  </div>
                 )}
               </div>
             );

@@ -17,6 +17,9 @@ import {
   completarConectar,
   canales,
   perfiles,
+  paramsCallback,
+  limpiarUrl,
+  errorAmigable,
 } from "../lib/canales.js";
 import { C } from "../lib/paleta.js";
 
@@ -95,12 +98,27 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   useEffect(() => { cargarCuentas(); }, [cargarCuentas]);
   useEffect(() => { cargarPlantillas(); }, [cargarPlantillas]);
 
-  // Volvimos de conectar el número (misma pestaña): limpiamos el enlace
+  // Volvimos de conectar el número (misma pestaña). El proveedor deja SU
+  // resultado en la cadena de consulta (?connected=whatsapp o ?error=…) y
+  // stokly marca la sección en el fragmento (#canales?seccion=whatsapp):
+  // se leen los DOS sitios y se cuenta cómo acabó. Antes sólo se limpiaba
+  // el enlace, así que si algo fallaba no había forma de enterarse.
   useEffect(() => {
-    if ((window.location.hash || "").startsWith("#canales")) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const p = paramsCallback();
+    const conectado = p.get("connected");
+    const fallo = p.get("error");
+    const msgFallo = p.get("error_message");
+    const volvimosDeConectar = conectado || fallo || (window.location.hash || "").startsWith("#canales");
+    if (!volvimosDeConectar) return;
+    limpiarUrl();
+    if (conectado) {
+      showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
+      cargarCuentas();
+    } else if (fallo) {
+      showToast("⚠️ " + errorAmigable(fallo, msgFallo));
+      cargarCuentas();
     }
-  }, []);
+  }, [showToast, cargarCuentas]);
 
   // Traemos los datos del popup oficial de Meta sólo cuando aún no hay
   // número conectado: así, al pulsar el botón no hay que esperar nada
@@ -118,7 +136,11 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     return () => clearInterval(t);
   }, [cuentaSel, cargarPlantillas]);
 
-  // ── Conectar número (opción principal: página oficial con tu negocio) ──
+  // ── Conectar número (opción principal: mismo recorrido que Meta) ──
+  // Va directo a la ventana de Facebook/WhatsApp EN LA MISMA PESTAÑA:
+  // sin ventana emergente, que es lo que bloqueaba el recorrido antes
+  // (la página auxiliar abría una ventana que el navegador rechazaba y
+  // el flujo se quedaba en el paso 1 sin avanzar).
   const conectar = async () => {
     setConectando(true);
     try {
@@ -128,12 +150,9 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
       const url = await urlConectar("whatsapp", {
         perfilId,
         redirect: window.location.origin + window.location.pathname + "#canales?seccion=whatsapp",
-        hosted: true,
-        brandName: (negocio && negocio.name) || "Mi negocio",
-        idioma: "es",
       });
       if (!url) throw new Error("No se pudo abrir la conexión");
-      // Misma pestaña: evita que el navegador bloquee la ventana
+      // Misma pestaña: evita que el navegador bloquee nada
       window.location.href = url;
     } catch (e) {
       setConectando(false);
@@ -236,10 +255,11 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
               <button className="btn-main" onClick={conectar} disabled={conectando} style={{ opacity: conectando ? 0.7 : 1 }}>
                 {conectando ? "Abriendo WhatsApp…" : "💬 Conectar mi número"}
               </button>
-              <button className="filter-btn" onClick={conectarDirecto} disabled={conectando} title="Ventana directa de Meta (si la principal no abre)">Conexión directa ↗</button>
+              <button className="filter-btn" onClick={conectarDirecto} disabled={conectando} title="Alternativa: la ventana de Meta en una pestaña aparte (si la principal no termina)">Conexión en ventana ↗</button>
             </div>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: C.muted, marginTop: 10, lineHeight: 1.6 }}>
-              Se abre la página oficial de WhatsApp para vincular <b>tu</b> número con la API de Meta: solo tú inicias sesión ahí.
+              Se abre Facebook/WhatsApp <b>en esta misma pestaña</b>: inicia sesión con tu cuenta, acepta los permisos y espera a que
+              termine — al acabar vuelves aquí solo y el número aparece conectado. Nada de ventanas emergentes que puedan bloquearse.
             </div>
           </div>
         )}

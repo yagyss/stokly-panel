@@ -95,19 +95,28 @@ export const perfiles = () => canales("/profiles");
 export const cuentas = (params) => canales("/accounts" + qs(params));
 export const cuenta = (accountId) => canales(`/accounts/${accountId}`);
 
-// ── Conectar una red social (flujo blanca: nunca se ve el proveedor) ──
+// ── Conectar una red social ────────────────────────────────────
 // Devuelve la respuesta COMPLETA: para la mayoría de redes trae
 // { authUrl } (hay que abrir ese enlace), pero Telegram devuelve
 // { code, botUsername, instructions } (hay que enviarle el código al bot).
-export const conectarRed = (plataforma, { perfilId, redirect, scopes, hosted, brandName, color, idioma } = {}) =>
+//
+// `headless` decide QUIÉN muestra el paso final de selección (página de
+// Facebook, ubicación de Google…):
+//   · por defecto → "true": el panel lo haría él mismo (sin proveedor
+//     a la vista), pero eso exige pantallas propias de selección;
+//   · `headless: false` → se omite el parámetro y el proveedor muestra
+//     su selector y termina solo: es el flujo que usan Facebook,
+//     Google Business y Snapchat (por eso SE RESPETA el `false`;
+//     antes se ignoraba y esas redes quedaban a medias).
+// `hosted` (solo WhatsApp) usa la página auxiliar con el nombre del negocio.
+export const conectarRed = (plataforma, { perfilId, redirect, scopes, hosted, headless, brandName, color, idioma } = {}) =>
   canales(
     `/connect/${plataforma}` +
       qs({
         profileId: perfilId,
-        headless: hosted ? undefined : "true",
+        headless: hosted ? undefined : headless === false ? undefined : "true",
         redirect_url: redirect,
         scopes,
-        // "hosted": página auxiliar con el nombre del negocio (solo WhatsApp)
         signup: hosted ? "hosted" : undefined,
         brandName,
         primaryColor: color,
@@ -184,6 +193,71 @@ export const eventoAgente = (accountId, cuerpo) =>
 export const estadoEvento = (accountId, eventId) => canales(AG(accountId, `/events/${eventId}`));
 
 // ── Utilidades para la UI ──────────────────────────────────────
+
+// ── Vuelta del OAuth ───────────────────────────────────────────
+// Al volver, el proveedor añade SU resultado a la cadena de consulta
+// (?connected=facebook&username=… o ?code=…&state=…) y stokly marca el
+// destino en el fragmento (#canales?redes=facebook). Se leen los DOS
+// sitios: antes sólo se miraba el fragmento y el resultado se perdía
+// (de ahí que una conexión no apareciera terminada).
+export const paramsCallback = () => {
+  const q = new URLSearchParams(window.location.search || "");
+  const h = window.location.hash || "";
+  const f = new URLSearchParams(h.includes("?") ? h.slice(h.indexOf("?") + 1) : "");
+  const p = new URLSearchParams();
+  for (const [k, v] of f) p.set(k, v); // el fragmento dice a qué red venimos
+  for (const [k, v] of q) p.set(k, v); // lo del proveedor manda si coincide
+  return p;
+};
+
+// Limpia la URL sin recargar: así un F5 no vuelve a procesar el mismo
+// resultado (y la barra no se queda con códigos sueltos).
+export const limpiarUrl = () =>
+  window.history.replaceState(null, "", window.location.pathname);
+
+// Los códigos que el proveedor manda al fallar un OAuth, en palabras
+// entendibles. Si hay `error_message` (viene localizado) y no lo
+// conocemos, se muestra tal cual.
+const ERRORES_OAUTH = {
+  oauth_denied: "No se autorizó el acceso en esa red. Vuelve a intentarlo y acepta los permisos.",
+  invalid_state: "El enlace de conexión expiró: vuelve a pulsar Conectar.",
+  invalid_callback: "La conexión quedó incompleta: vuelve a intentarlo.",
+  connection_failed: "La red no completó la conexión: inténtalo de nuevo en unos segundos.",
+  connection_cancelled: "Cerraste la ventana antes de terminar. Vuelve a intentarlo.",
+  session_expired: "La conexión expiró (dura 60 minutos): vuelve a empezar.",
+  account_mismatch: "Se autorizó otra cuenta de esa red: repite el proceso con la cuenta correcta.",
+  code_already_redeemed: "La conexión ya estaba hecha: pulsa ↻ Actualizar.",
+  payment_required: "Esa conexión pide un pago en el proveedor: revísalo antes de continuar.",
+  PLATFORM_BETA_RESTRICTED: "Esa red está en prueba cerrada por ahora.",
+  whatsapp_error: "",
+  whatsapp_coexistence_not_registered:
+    "Ese número todavía no está registrado en la app WhatsApp Business: ábrela, verifica el número y vuelve a intentarlo.",
+  whatsapp_number_already_connected: "Ese número de WhatsApp ya está conectado.",
+  one_whatsapp_per_profile: "Solo puede haber un número de WhatsApp en este perfil.",
+  whatsapp_number_pinned_to_profile: "Ese número pertenece a otro perfil.",
+  no_facebook_pages:
+    "Meta no vio páginas en esa cuenta: en la pantalla de Meta pulsa «Editar ajustes previos», marca tu página y vuelve a intentarlo.",
+  pages_permission_declined: "No diste permiso de páginas en Meta: vuelve a intentarlo y acepta ese permiso.",
+  no_pages_granted: "No marcaste ninguna página en la pantalla de Meta: repítelo y márcala.",
+  granted_pages_not_listed: "Meta no encontró páginas a tu nombre: revisa que seas administrador de la página.",
+  missing_google_permissions: "Faltaron permisos de Google: repítelo y deja todos los permisos marcados.",
+  missing_tiktok_permissions: "Faltaron permisos en TikTok: repítelo y acepta todos los permisos.",
+  no_youtube_channel: "Esa cuenta de Google no tiene canal de YouTube asociado.",
+  no_google_locations: "No se encontraron ubicaciones de Google en esa cuenta.",
+  discord_no_guild: "No se encontró ningún servidor de Discord que puedas gestionar.",
+  slack_no_team: "No se encontró ningún espacio de Slack que puedas gestionar.",
+  no_snapchat_public_profiles: "No hay perfiles públicos de Snapchat en esa cuenta.",
+};
+
+export const errorAmigable = (codigo, mensaje) => {
+  const c = String(codigo || "").trim();
+  const conocido = ERRORES_OAUTH[c] ?? ERRORES_OAUTH[c.toUpperCase()];
+  if (conocido) return conocido;
+  if (mensaje) return String(mensaje);
+  if (c) return `No se pudo completar la conexión (${c}).`;
+  return "No se pudo completar la conexión.";
+};
+
 export const PLATAFORMAS = [
   { id: "whatsapp",    nombre: "WhatsApp",     emoji: "💬", color: "#25D366", msj: true },
   { id: "instagram",   nombre: "Instagram",    emoji: "📸", color: "#E1306C", msj: true },
