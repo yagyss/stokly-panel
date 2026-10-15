@@ -13,7 +13,7 @@ import {
   cuentas,
   plantillas,
   crearPlantilla,
-  urlConectar,
+  conectarRed,
   completarConectar,
   canales,
   perfiles,
@@ -106,14 +106,37 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   useEffect(() => {
     const p = paramsCallback();
     const conectado = p.get("connected");
+    const codigo = p.get("code");
+    const state = p.get("state");
     const fallo = p.get("error");
     const msgFallo = p.get("error_message");
-    const volvimosDeConectar = conectado || fallo || (window.location.hash || "").startsWith("#canales");
+    const volvimosDeConectar = conectado || codigo || fallo || (window.location.hash || "").startsWith("#canales");
     if (!volvimosDeConectar) return;
     limpiarUrl();
     if (conectado) {
       showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
       cargarCuentas();
+    } else if (codigo) {
+      // Volvimos con el código de Meta sin canjear (flujo headless): aquí se
+      // intercambia por la conexión real. Antes este código se ignoraba y la
+      // conexión quedaba muda: parecía que "WhatsApp no dejaba conectar".
+      (async () => {
+        const pid =
+          sessionStorage.getItem("stokly_wa_perfil") ||
+          (await perfiles().then((d) => d?.profiles?.[0]?._id).catch(() => ""));
+        sessionStorage.removeItem("stokly_wa_perfil");
+        if (!pid) {
+          showToast("⚠️ No se pudo completar la conexión: vuelve a pulsar Conectar.");
+          return;
+        }
+        try {
+          await completarConectar("whatsapp", { code: codigo, state, profileId: pid });
+          showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
+        } catch (e) {
+          showToast("⚠️ " + e.message);
+        }
+        cargarCuentas();
+      })();
     } else if (fallo) {
       showToast("⚠️ " + errorAmigable(fallo, msgFallo));
       cargarCuentas();
@@ -147,14 +170,38 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
       const perfil = await perfiles();
       const perfilId = perfil?.profiles?.[0]?._id;
       if (!perfilId) throw new Error("No se encontró tu perfil");
-      const url = await urlConectar("whatsapp", {
-        perfilId,
-        redirect: window.location.origin + window.location.pathname + "#canales?seccion=whatsapp",
-      });
-      if (!url) throw new Error("No se pudo abrir la conexión");
+      // Guardamos el perfil: si la vuelta trae el código de Meta en vez del
+      // resultado, hay que canjearlo con este profileId.
+      sessionStorage.setItem("stokly_wa_perfil", perfilId);
+      const pedirEnlace = () =>
+        conectarRed("whatsapp", {
+          perfilId,
+          // headless:false → el proveedor TERMINA la conexión en su callback
+          // y al volver avisa con ?connected=whatsapp (mismo camino que
+          // Facebook, que sí funcionaba). Con headless=true la vuelta traía
+          // ?code=… y esta sección no lo canjeaba: todo quedaba sin avisar.
+          headless: false,
+          redirect: window.location.origin + window.location.pathname + "#canales?seccion=whatsapp",
+        });
+      let datos = await pedirEnlace();
+      let url = datos?.authUrl || datos?.url || "";
+      if (!url) {
+        // Reintento único: el enlace a veces llega vacío por un tropiezo
+        // transitorio del proveedor/rede; con esto no se nota.
+        await new Promise((r) => setTimeout(r, 1200));
+        datos = await pedirEnlace();
+        url = datos?.authUrl || datos?.url || "";
+      }
+      if (!url) {
+        if (datos?.error) throw new Error(errorAmigable(datos.error, datos.error_message || datos.message));
+        const detalle = !datos ? "vacía" : typeof datos === "object" ? Object.keys(datos).join(", ") : String(datos).slice(0, 60);
+        console.warn("[stokly] WhatsApp sin enlace de conexión:", JSON.stringify(datos).slice(0, 400));
+        throw new Error(`El proveedor no devolvió el enlace de conexión (respuesta: ${detalle}). Reintenta en unos segundos.`);
+      }
       // Misma pestaña: evita que el navegador bloquee nada
       window.location.href = url;
     } catch (e) {
+      sessionStorage.removeItem("stokly_wa_perfil");
       setConectando(false);
       showToast("⚠️ " + e.message);
     }

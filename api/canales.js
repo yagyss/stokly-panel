@@ -138,7 +138,7 @@ export default async function handler(req, res) {
   // --- 1) ¿Quién llama? (sesión de stokly) ----------------------
   const usuario = await usuarioDe(req);
   if (!usuario) {
-    console.log(`[canales] 401 sin sesión válida · ${req.method}`);
+    console.log(`[canales] 401 sin sesión válida · ${req.method} · origen=${origen || "-"}`);
     return json(res, 401, { error: "No autorizado" });
   }
 
@@ -180,15 +180,22 @@ export default async function handler(req, res) {
     });
     const texto = await r.text();
     // Diagnóstico para los logs del servidor: qué se pidió y qué forma
-    // devolvió (sólo claves, nunca valores: así no se filtran tokens).
+    // devolvió (sólo claves y longitudes, nunca valores: así no se
+    // filtran tokens). El origen indica desde qué host abrieron la app.
     let forma = "vacío";
     try {
       const j = JSON.parse(texto);
       forma = Array.isArray(j) ? `array(${j.length})` : Object.keys(j).join(",");
+      // En /connect/* el navegador necesita authUrl: si llegó presente pero
+      // vacío el usuario ve "no se pudo abrir la conexión" — aquí se nota
+      // (sólo la longitud, nunca el enlace).
+      if (soloRuta.startsWith("/connect/") && j && typeof j === "object" && !Array.isArray(j) && "authUrl" in j) {
+        forma += ` authUrl=${j.authUrl ? String(j.authUrl).length + "ch" : "VACÍA"}`;
+      }
     } catch {
       if (texto) forma = "no-json";
     }
-    console.log(`[canales] ${req.method} ${soloRuta} → ${r.status} ${forma}`);
+    console.log(`[canales] ${req.method} ${soloRuta} → ${r.status} ${forma} · origen=${origen || "-"}`);
     res.statusCode = r.status;
     res.setHeader(
       "Content-Type",

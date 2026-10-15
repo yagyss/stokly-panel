@@ -9,10 +9,14 @@
 //   · Los archivos con nombre hasheado (assets/index-xxxx.js) se
 //     guardan en caché porque ya no cambian nunca.
 //   · Nada de Supabase/API: sólo se cachea el mismo dominio.
-//  ¿Al cambiar el código del SW? Sube el número de CACHE (v1→v2).
+//   · NUNCA se toca /api/ (el proxy de canales): aunque sea del mismo
+//     dominio, todas sus llamadas comparten URL y la respuesta cambia
+//     según la cabecera x-path — cachearla devolvía enlaces viejos
+//     de OTRA ruta y "Conectar" fallaba sin motivo.
+//  ¿Al cambiar el código del SW? Sube el número de CACHE (v2→v3).
 // ============================================================
 
-const CACHE = "stokly-pwa-v2";
+const CACHE = "stokly-pwa-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./favicon.svg"];
 
 self.addEventListener("install", (evento) => {
@@ -44,6 +48,7 @@ self.addEventListener("fetch", (evento) => {
     return;
   }
   if (url.origin !== self.location.origin) return; // Supabase y externos: red
+  if (url.pathname.startsWith("/api/")) return; // proxy de canales: siempre de la red
   if (url.pathname.endsWith("/sw.js")) return; // el propio SW siempre de la red
   evento.respondWith(responder(req));
 });
