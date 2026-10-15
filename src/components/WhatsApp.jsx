@@ -63,20 +63,34 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   const [enviando, setEnviando] = useState(false);
   const [ok, setOk] = useState("");
 
-  const cargarCuentas = useCallback(async () => {
-    setCargandoCuentas(true);
+  const cargarCuentas = useCallback(async (silencioso = false) => {
+    if (!silencioso) setCargandoCuentas(true);
     try {
       const d = await cuentas({ platform: "whatsapp" });
       const arr = Array.isArray(d?.accounts) ? d.accounts : [];
       setCuentaWhats(arr);
       setErrorCuentas("");
       setCuentaSel((prev) => prev || arr[0]?._id || "");
+      return arr;
     } catch (e) {
-      setErrorCuentas(e.message);
+      if (!silencioso) setErrorCuentas(e.message);
+      return [];
     } finally {
-      setCargandoCuentas(false);
+      if (!silencioso) setCargandoCuentas(false);
     }
   }, []);
+
+  // Tras conectar, la cuenta tarda unos segundos en aparecer en el listado:
+  // la buscamos sola (igual que hace Integraciones) para que la tarjeta salga
+  // sin que haya que refrescar a mano.
+  const buscarHastaQueAparezca = useCallback(async () => {
+    for (let i = 0; i < 8; i++) {
+      const arr = await cargarCuentas(true);
+      if (arr && arr.length) return true;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    return false;
+  }, [cargarCuentas]);
 
   const cargarPlantillas = useCallback(
     async (silencioso = false) => {
@@ -115,7 +129,7 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     limpiarUrl();
     if (conectado) {
       showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
-      cargarCuentas();
+      buscarHastaQueAparezca();
     } else if (codigo) {
       // Volvimos con el código de Meta sin canjear (flujo headless): aquí se
       // intercambia por la conexión real. Antes este código se ignoraba y la
@@ -135,13 +149,13 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
         } catch (e) {
           showToast("⚠️ " + e.message);
         }
-        cargarCuentas();
+        buscarHastaQueAparezca();
       })();
     } else if (fallo) {
       showToast("⚠️ " + errorAmigable(fallo, msgFallo));
       cargarCuentas();
     }
-  }, [showToast, cargarCuentas]);
+  }, [showToast, cargarCuentas, buscarHastaQueAparezca]);
 
   // Traemos los datos del popup oficial de Meta sólo cuando aún no hay
   // número conectado: así, al pulsar el botón no hay que esperar nada
