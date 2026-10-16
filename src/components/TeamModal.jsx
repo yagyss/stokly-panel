@@ -209,8 +209,8 @@ export default function TeamModal({
               <span
                 className="pill"
                 style={{
-                  background: m.role === "owner" ? "#F1F3F5" : "#F3F0FF",
-                  color: m.role === "owner" ? "#4E5765" : "#5C5674",
+                  background: m.role === "owner" ? "#EAF1F7" : "#F1EEF8",
+                  color: m.role === "owner" ? "#3D6E96" : "#6B5B9B",
                 }}
               >
                 {m.role === "owner" ? "👑 Dueño" : "Miembro"}
@@ -256,8 +256,8 @@ export default function TeamModal({
                   <span
                     className="pill"
                     style={{
-                      background: iv.status === "pending" ? "#F7F3EE" : "#F0F4F2",
-                      color: iv.status === "pending" ? "#8A5A2B" : "#2F6B52",
+                      background: iv.status === "pending" ? "#FAF4E4" : "#F0F4F2",
+                      color: iv.status === "pending" ? "#9A7A20" : "#2F6B52",
                     }}
                   >
                     {iv.status === "pending" ? "Pendiente" : "Aceptada"}
@@ -282,7 +282,7 @@ export default function TeamModal({
           </>
         )}
 
-        <div style={{ background: "#F1F3F5", borderRadius: 14, padding: "12px 14px", fontSize: 12, color: "#4E5765", fontWeight: 700, lineHeight: 1.55, marginTop: 10 }}>
+        <div style={{ background: "#EAF1F7", borderRadius: 14, padding: "12px 14px", fontSize: 12, color: "#3D6E96", fontWeight: 700, lineHeight: 1.55, marginTop: 10 }}>
           📌 <b>Cómo funciona:</b> la persona recibe un correo, crea su contraseña y al entrar
           su correo queda unido a este panel. Si ya tenía cuenta stokly, solo debe iniciar
           sesión con ese correo.

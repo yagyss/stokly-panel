@@ -140,14 +140,14 @@ input, button, textarea, select { font-family: inherit; }
 .pw-txt { font-size: 11px; font-weight: 900; letter-spacing: .03em; white-space: nowrap; }
 .l0 { color: #A3352C } .l0.pwmeter-fill, .pwmeter-fill.l0 { background: #A3352C }
 .l1 { color: #A3352C } .pwmeter-fill.l1 { background: #A3352C }
-.l2 { color: #8A6A1C } .pwmeter-fill.l2 { background: #8A6A1C }
-.l3 { color: #4E5765 } .pwmeter-fill.l3 { background: #4E5765 }
+.l2 { color: #9A7A20 } .pwmeter-fill.l2 { background: #9A7A20 }
+.l3 { color: #3D6E96 } .pwmeter-fill.l3 { background: #3D6E96 }
 .l4 { color: #2F6B52 } .pwmeter-fill.l4 { background: #2F6B52 }
 
 /* mensajes */
 .msg { display: flex; gap: 9px; align-items: flex-start; border-radius: 14px; padding: 12px 14px; font-size: 13.5px; font-weight: 700; line-height: 1.5; margin-bottom: 16px; animation: nudge .3s ease; }
 .msg.error { background: #FBF2F1; color: #A3352C; }
-.msg.info  { background: #F1F3F5; color: #4E5765; }
+.msg.info  { background: #EAF1F7; color: #3D6E96; }
 @keyframes nudge { from { opacity: 0; transform: translateY(-5px) } to { opacity: 1; transform: none } }
 
 /* botón principal */

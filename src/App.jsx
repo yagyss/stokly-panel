@@ -46,10 +46,12 @@ import {
 
 const C = {
   bg: "#F5F6F7", white: "#FFFFFF", text: "#1B1D21", muted: "#797E8C", border: "#E4E6EA",
+  // Semántica de color: verde = positivo · ámbar = pendiente/alerta · naranja = gasto ·
+  // azul/morado = métricas y datos · rojo = error/pérdida. Sobrios, no neón.
   green: "#2F6B52", greenLight: "#F0F4F2", red: "#A3352C", redLight: "#FBF2F1",
-  blue: "#4E5765", blueLight: "#F1F3F5", orange: "#8A5A2B", orangeLight: "#F7F3EE",
-  purple: "#5C5674", purpleLight: "#F3F2F6", yellow: "#8A6A1C", yellowLight: "#F8F6EE",
-  teal: "#3A6B72", tealLight: "#F0F4F5",
+  blue: "#3D6E96", blueLight: "#EAF1F7", orange: "#BC6C30", orangeLight: "#FBF1E8",
+  purple: "#6B5B9B", purpleLight: "#F1EEF8", yellow: "#9A7A20", yellowLight: "#FAF4E4",
+  teal: "#3E7D76", tealLight: "#EAF3F1",
   sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
@@ -697,7 +699,7 @@ function LabelsModal({ products, onClose, showToast }) {
             </div>
           </div>
         )}
-        {fallos > 0 && <div style={{ background:C.yellowLight, color:"#8A6A2B", borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⚠️ {fallos} código(s) tienen caracteres especiales — abajo del código se imprime el número igual</div>}
+        {fallos > 0 && <div style={{ background:C.yellowLight, color:C.yellow, borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⚠️ {fallos} código(s) tienen caracteres especiales — abajo del código se imprime el número igual</div>}
         {!listo && <div style={{ background:C.blueLight, color:C.blue, borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⏳ Cargando el generador de códigos…</div>}
         <div style={{ display:"flex", gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cerrar</button>
@@ -2789,7 +2791,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
         {/* 💰 Lo que todavía NO es ingreso, aparte y bien visible */}
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
           <span className="pill" style={{ background:"rgba(255,255,255,.2)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }}>✅ {ventasR.filter(esConfirmada).length} confirmadas</span>
-          <span className="pill" style={{ background:pendR>0?"#F7F3EA":"rgba(255,255,255,.14)", color:pendR>0?"#8A6A2B":"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Ventas todavía no entregadas/cobradas: NO cuentan como ingreso">🕓 {fmt(pendR)} pendiente</span>
+          <span className="pill" style={{ background:pendR>0?C.yellowLight:"rgba(255,255,255,.14)", color:pendR>0?C.yellow:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Ventas todavía no entregadas/cobradas: NO cuentan como ingreso">🕓 {fmt(pendR)} pendiente</span>
           {devueltasR>0 && <span className="pill" style={{ background:"rgba(255,255,255,.14)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Dinero devuelto dentro de ventas confirmadas">↩️ {fmt(devueltasR)} devueltos</span>}
         </div>
       </div>
@@ -2865,7 +2867,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
                 <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:esConfirmada(s)?C.green:C.muted }}>{esConfirmada(s)?fmt(ingresoDe(s)):fmt(s.total)}</div>
-                {!esConfirmada(s) && <div style={{ fontSize:11, fontWeight:900, color:"#8A6A2B", textAlign:"right", marginTop:-4 }} title="Todavía no es ingreso">⏳ sin cobrar</div>}
+                {!esConfirmada(s) && <div style={{ fontSize:11, fontWeight:900, color:C.yellow, textAlign:"right", marginTop:-4 }} title="Todavía no es ingreso">⏳ sin cobrar</div>}
                 {s.returnedQty>0 && <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", marginTop:-4 }}>↩️ −{fmt(s.returnedAmount||0)}</div>}
                 {s.discount>0 && (
                   <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", lineHeight:1.35, marginTop:-4 }}>
@@ -2881,7 +2883,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                   {esPrimera&&st==="pendiente"&&<button title="Marcar el pedido como enviado a la mensajería" onClick={()=>cambiarEstado(g,"enviado")} style={btnAccion("#EEF1F5","#3F4A5C")}>🚚 Enviado</button>}
                   {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Confirmar que el cliente recibió y pagó — no vuelve a descontar stock ni duplica el ingreso" onClick={()=>confirmarRecibido(g)} style={btnAccion("#F0F4F1","#2F6B52")}>✅ Confirmar recibido</button>}
                   {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Cancelar el pedido: el stock regresa y NO cuenta como ingreso" onClick={()=>{ if(window.confirm("❌ ¿Cancelar este pedido?\n\nEl stock vuelve al inventario y deja de contar como ingreso.")) cambiarEstado(g,"cancelado"); }} style={btnAccion(C.redLight,C.red)}>❌ Cancelar</button>}
-                  {esPrimera&&st==="entregado"&&<button title="Registrar devolución de esta referencia (parcial o total)" onClick={()=>setDevolver(s)} style={btnAccion("#F7F3EA","#8A6A2B")}>↩️ Devolución</button>}
+                  {esPrimera&&st==="entregado"&&<button title="Registrar devolución de esta referencia (parcial o total)" onClick={()=>setDevolver(s)} style={btnAccion(C.yellowLight,C.yellow)}>↩️ Devolución</button>}
                   {esPrimera&&st==="cancelado"&&<button title="Reabrir el pedido" onClick={()=>cambiarEstado(g, s.modality==="contraentrega"?"pendiente":"entregado")} style={btnAccion(C.bg,C.text)}>🔄 Reabrir</button>}
                   <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
                   <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
@@ -3215,7 +3217,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",marginBottom:4 }}>Punto de Equilibrio</div>
             <div style={{ fontSize:36,fontWeight:900,color:C.orange,marginBottom:10 }}>{fmt(breakEven)}</div>
-            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSalesR,breakEven))}%`, background:totalSalesR>=breakEven?C.green:"#8A8FA0" }} /></div>
+            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSalesR,breakEven))}%`, background:totalSalesR>=breakEven?C.green:C.yellow }} /></div>
             <div style={{ background:totalSalesR>=breakEven?C.greenLight:C.yellowLight,borderRadius:12,padding:12,fontSize:13,fontWeight:700,color:totalSalesR>=breakEven?C.green:C.yellow }}>
               {totalSalesR>=breakEven?"✅ Superaste el punto de equilibrio":`⚠️ Faltan ${fmt(breakEven-totalSalesR)}`}
             </div>
@@ -3243,7 +3245,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           {/* 🕓 Dinero que todavía NO es ingreso */}
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">🕓 Pendiente de cobro</div>
-            <div style={{ fontSize:36,fontWeight:900,color:pendientesR>0?"#8A6A2B":C.muted,marginBottom:6 }}>{fmt(pendientesR)}</div>
+            <div style={{ fontSize:36,fontWeight:900,color:pendientesR>0?C.yellow:C.muted,marginBottom:6 }}>{fmt(pendientesR)}</div>
             <div style={{ fontSize:13,color:C.muted,fontWeight:700,lineHeight:1.6 }}>
               {pendientesR>0
                 ? `Contraentregas aún no confirmadas: NO cuentan como ingreso ni como costo hasta que el cliente reciba. En Ventas dale a ✅ Confirmar recibido.`
@@ -3440,7 +3442,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   <span style={{ fontSize:11, fontWeight:800, color:C.muted }}> · {a.uds} ud · {a.pedidos} ped.</span>
                 </span>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((a.total/max)*100)}%`, background:a.id==="publicidad"?"#9AA1B0":"#9AA1B0" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((a.total/max)*100)}%`, background:a.id==="publicidad"?C.purple:C.blue }} /></div>
             </div>
           );
         })}
@@ -3529,7 +3531,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </span>
                 ))}
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((r.uds/maxSold)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((r.uds/maxSold)*100)}%`, background:i===0?C.purple:"#B9B2D1" }} /></div>
             </div>
           ))}
           {ranking.length > N_RANK && (
@@ -3561,7 +3563,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   <div style={{ fontSize:11, fontWeight:800, color:C.muted }}>{fmt(m.total)}</div>
                 </div>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((m.uds/maxMarca)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((m.uds/maxMarca)*100)}%`, background:i===0?C.purple:"#B9B2D1" }} /></div>
             </div>
           ))}
           {byBrand.length > N_MARCA && (
@@ -3583,7 +3585,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </div>
                   <span style={{ fontWeight:900,color:C.purple }}>{sold} uds</span>
                 </div>
-                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(1,...Object.values(byColor)))*100)}%`, background:"#9AA1B0" }} /></div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(1,...Object.values(byColor)))*100)}%`, background:C.purple }} /></div>
               </div>
             ))}
             {Object.entries(byColor).filter(([,sold])=>sold>0).length === 0 && (
@@ -3612,7 +3614,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </div>
                   <span style={{ fontWeight:900, fontSize:13, color:i===0?C.green:C.purple }}>{sold} uds</span>
                 </div>
-                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?C.purple:"#B9B2D1" }} /></div>
               </div>
             ))}
             {bySize.length > N_TALLAS && (

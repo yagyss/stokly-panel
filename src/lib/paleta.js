@@ -2,10 +2,12 @@
 // ⚠️ Es el MISMO objeto C que vive en src/App.jsx — mantenerlos iguales.
 export const C = {
   bg: "#F5F6F7", white: "#FFFFFF", text: "#1B1D21", muted: "#797E8C", border: "#E4E6EA",
+  // Semántica: verde = positivo · ámbar = pendiente/alerta · naranja = gasto ·
+  // azul/morado = métricas · rojo = error/pérdida. (mantener igual que App.jsx)
   green: "#2F6B52", greenLight: "#F0F4F2", red: "#A3352C", redLight: "#FBF2F1",
-  blue: "#4E5765", blueLight: "#F1F3F5", orange: "#8A5A2B", orangeLight: "#F7F3EE",
-  purple: "#5C5674", purpleLight: "#F3F2F6", yellow: "#8A6A1C", yellowLight: "#F8F6EE",
-  teal: "#3A6B72", tealLight: "#F0F4F5",
+  blue: "#3D6E96", blueLight: "#EAF1F7", orange: "#BC6C30", orangeLight: "#FBF1E8",
+  purple: "#6B5B9B", purpleLight: "#F1EEF8", yellow: "#9A7A20", yellowLight: "#FAF4E4",
+  teal: "#3E7D76", tealLight: "#EAF3F1",
   sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
