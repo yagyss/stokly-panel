@@ -15,13 +15,13 @@ import {
   crearPlantilla,
   conectarRed,
   completarConectar,
-  canales,
   perfiles,
   paramsCallback,
   limpiarUrl,
   errorAmigable,
 } from "../lib/canales.js";
 import { C } from "../lib/paleta.js";
+import IconoWhatsApp from "./IconoWhatsApp.jsx";
 
 const COLOR_ESTADO = {
   APPROVED: { bg: C.greenLight, color: "#0B7A5B", texto: "✅ Aprobada" },
@@ -35,25 +35,22 @@ const COLOR_ESTADO = {
 
 const vacio = { nombre: "", categoria: "UTILITY", idioma: "es_CO", cuerpo: "", header: "", footer: "", rta: "", urlTexto: "", url: "" };
 
-// ── Conexión del número (popup oficial de Meta) ────────────────
-const cargarScriptFacebook = () =>
-  new Promise((resolve, reject) => {
-    if (window.FB) return resolve();
-    const s = document.createElement("script");
-    s.src = "https://connect.facebook.net/en_US/sdk.js";
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("No se pudo cargar el popup de Meta"));
-    document.head.appendChild(s);
-    setTimeout(() => reject(new Error("El popup de Meta tardó demasiado")), 12000);
-  });
+// Al volver de conectar, si el resultado llega en la VENTANA EMERGENTE, se
+// avía a la app madre (que es quien refresca el número) y esta ventana se
+// cierra sola. Devuelve true si éramos el popup; false si fue en la pestaña
+// normal (entonces la recarga local continúa sin tocar nada).
+const avisarMadre = (tipo, msg) => {
+  if (!window.opener) return false;
+  try { window.opener.postMessage({ stoklyWa: tipo, msg: msg || "" }, "*"); } catch (_) {}
+  setTimeout(() => { try { window.close(); } catch (_) {} }, 700);
+  return true;
+};
 
 export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   const [cuentaWhats, setCuentaWhats] = useState([]);
   const [cargandoCuentas, setCargandoCuentas] = useState(true);
   const [errorCuentas, setErrorCuentas] = useState("");
   const [conectando, setConectando] = useState(false);
-  const [cfgMeta, setCfgMeta] = useState(null); // datos del popup oficial, cargados al abrir la sección
   const [cuentaSel, setCuentaSel] = useState("");
   const [lista, setLista] = useState([]);
   const [cargandoPl, setCargandoPl] = useState(true);
@@ -62,10 +59,10 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   const [abriendoForm, setAbriendoForm] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [ok, setOk] = useState("");
-  // Datos precargados para abrir el POPUP de Meta al instante desde el clic
-  // (si el navegador detecta que la ventana no sale de un gesto directo, la bloquea).
+  // El id de perfil va precargado: así, al pulsar Conectar, la ventana
+  // emergente se abre al instante dentro del propio clic y el navegador
+  // no la bloquea (si sale de una promesa, la bloquea).
   const perfilIdRef = useRef(null);
-  const fbListoRef = useRef(false);
 
   const cargarCuentas = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargandoCuentas(true);
@@ -132,8 +129,12 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     if (!volvimosDeConectar) return;
     limpiarUrl();
     if (conectado) {
-      showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
-      buscarHastaQueAparezca();
+      // En la ventana emergente basta con avisar a la app madre (que refresca
+      // el número) y cerrarse; en la misma pestaña se recarga aquí.
+      if (!avisarMadre("ok")) {
+        showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
+        buscarHastaQueAparezca();
+      }
     } else if (codigo) {
       // Volvimos con el código de Meta sin canjear (flujo headless): aquí se
       // intercambia por la conexión real. Antes este código se ignoraba y la
@@ -144,38 +145,57 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
           (await perfiles().then((d) => d?.profiles?.[0]?._id).catch(() => ""));
         sessionStorage.removeItem("stokly_wa_perfil");
         if (!pid) {
+          if (avisarMadre("error", "No se pudo completar la conexión")) return;
           showToast("⚠️ No se pudo completar la conexión: vuelve a pulsar Conectar.");
           return;
         }
         try {
           await completarConectar("whatsapp", { code: codigo, state, profileId: pid });
+          if (avisarMadre("ok")) return;
           showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
         } catch (e) {
+          if (avisarMadre("error", e.message)) return;
           showToast("⚠️ " + e.message);
         }
         buscarHastaQueAparezca();
       })();
     } else if (fallo) {
-      showToast("⚠️ " + errorAmigable(fallo, msgFallo));
-      cargarCuentas();
+      const texto = errorAmigable(fallo, msgFallo);
+      if (!avisarMadre("error", texto)) {
+        showToast("⚠️ " + texto);
+        cargarCuentas();
+      }
     }
   }, [showToast, cargarCuentas, buscarHastaQueAparezca]);
 
-  // Traemos lo necesario para abrir el POPUP de Meta al instante: la config,
-  // el SDK oficial y el id de perfil. Al precargarlo, al pulsar Conectar la
-  // ventana emergente sale del propio clic y el navegador no la bloquea.
+  // La ventana emergente de conexión avisa a la app madre cuando termina
+  // (éxito o error): aquí se corta el "cargando" y se refresca el número.
   useEffect(() => {
-    if (cuentaWhats.length) return;
-    canales("/connect/whatsapp/sdk-config")
-      .then((d) => { if (d?.appId && d?.configId) setCfgMeta(d); })
-      .catch(() => {});
+    const alRecibir = (ev) => {
+      const d = ev.data;
+      if (!d || (d.stoklyWa !== "ok" && d.stoklyWa !== "error")) return;
+      setConectando(false);
+      if (d.stoklyWa === "ok") {
+        showToast("✅ Número de WhatsApp conectado: buscando la cuenta…");
+        buscarHastaQueAparezca();
+      } else {
+        showToast("⚠️ " + (d.msg || "No se pudo conectar el número."));
+        cargarCuentas();
+      }
+    };
+    window.addEventListener("message", alRecibir);
+    return () => window.removeEventListener("message", alRecibir);
+  }, [showToast, buscarHastaQueAparezca, cargarCuentas]);
+
+  // Precargamos el id de perfil para que, al pulsar Conectar, la ventana
+  // emergente se abra al instante dentro del propio clic (si sale de una
+  // promesa, el navegador la bloquea). Se trae aunque ya haya número,
+  // porque "Conectar otro número" también lo necesita.
+  useEffect(() => {
     perfiles()
       .then((p) => { perfilIdRef.current = p?.profiles?.[0]?._id || null; })
       .catch(() => {});
-    cargarScriptFacebook()
-      .then(() => { fbListoRef.current = true; })
-      .catch(() => {});
-  }, [cuentaWhats.length]);
+  }, []);
 
   // Estado de las plantillas: Meta tarda hasta 24 h, así que se refresca
   useEffect(() => {
@@ -230,41 +250,72 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     }
   };
 
-  // ── Conectar número (PRINCIPAL: ventana emergente de Meta) ───
-  // Abre la conexión oficial de Facebook/WhatsApp como POPUP sobre la app.
-  // Se dispara SIN esperas justo al clic (config, SDK y perfil van precargados
-  // al entrar a la sección) para que el navegador no la bloquee. Meta la
-  // cierra sola al terminar y el número queda conectado aquí. Si algo no está
-  // listo o bloquean las ventanas, cae a la opción de la misma pestaña.
+  // ── Conectar número (PRINCIPAL: ventana emergente) ───────────
+  // Reusa el MISMO enlace OAuth verificado —el que Meta ya acepta, el que
+  // funcionaba en pestaña— pero lo abre en una VENTANA emergente sobre la
+  // app (Meta no deja incrustarse como iframe). La ventana se reserva YA,
+  // dentro del clic, para que el navegador no la bloquee; al volver, esa
+  // misma ventana procesa el resultado y se cierra sola avisando a esta
+  // app. Si el navegador bloquea la ventana, cae a la pestaña (siempre ok).
   const conectar = () => {
-    const perfilId = perfilIdRef.current;
-    const cfg = cfgMeta;
-    if (cfg?.appId && cfg?.configId && perfilId && window.FB) {
-      try {
-        window.FB.init({ appId: cfg.appId, cookie: false, xfbml: false, version: "v21.0" });
-      } catch (_) { /* un init repetido es inofensivo */ }
-      setConectando(true);
-      window.FB.login(
-        (res) => {
-          setConectando(false);
-          const codigo = res && res.authResponse && res.authResponse.code;
-          if (!codigo) { showToast("Conexión cancelada"); return; }
-          completarConectar("whatsapp", { code: codigo, profileId: perfilId })
-            .then(() => { showToast("✅ Número de WhatsApp conectado: buscando la cuenta…"); buscarHastaQueAparezca(); })
-            .catch((e) => showToast("⚠️ " + e.message));
-        },
-        {
-          config_id: cfg.configId,
-          response_type: "code",
-          override_default_response_type: true,
-          features: ["WAEmbeddedSignup"],
-          auth_type: "rerequest",
-        }
+    const win = window.open(
+      "about:blank",
+      "stokly_wa_conectar",
+      "popup=yes,width=520,height=720,left=" +
+        Math.max(0, Math.round((window.innerWidth - 520) / 2)) +
+        ",top=" + Math.max(0, Math.round((window.innerHeight - 720) / 2))
+    );
+    if (!win) { conectarSameTab(); return; } // ventana bloqueada → misma pestaña
+    setConectando(true);
+    // Pantalla de espera mientras se pide el enlace a Meta.
+    try {
+      win.document.write(
+        "<!doctype html><meta charset='utf-8'><title>Conectando…</title>" +
+          "<style>body{font-family:system-ui,sans-serif;margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#23262C;color:#fff}" +
+          "c{text-align:center}b{font-size:15px}p{opacity:.7;font-size:12.5px;margin:8px 0 0}</style>" +
+          "<body><c><div style='font-size:36px'>💬</div><b>Abriendo WhatsApp…</b><p>Completa el proceso en la ventana de Meta</p></c></body>"
       );
-      return;
-    }
-    // Respaldo: misma pestaña (recorrido verificado).
-    conectarSameTab();
+      win.document.close();
+    } catch (_) {}
+    // Si el usuario cierra la ventana a mano, se corta el "cargando".
+    const vigilar = setInterval(() => {
+      if (win.closed) { clearInterval(vigilar); setConectando(false); }
+    }, 800);
+    (async () => {
+      try {
+        const perfilId = perfilIdRef.current || (await perfiles().then((p) => p?.profiles?.[0]?._id));
+        if (!perfilId) throw new Error("No se encontró tu perfil");
+        const pedirEnlace = () =>
+          conectarRed("whatsapp", {
+            perfilId,
+            // headless:false → el proveedor TERMINA la conexión y al volver
+            // avisa con ?connected=whatsapp (el camino que sí funciona).
+            headless: false,
+            redirect: window.location.origin + window.location.pathname + "#canales?seccion=whatsapp",
+          });
+        let datos = await pedirEnlace();
+        let url = datos?.authUrl || datos?.url || "";
+        if (!url) {
+          // Reintento único por tropiezos transitorios del proveedor.
+          await new Promise((r) => setTimeout(r, 1200));
+          datos = await pedirEnlace();
+          url = datos?.authUrl || datos?.url || "";
+        }
+        if (!url) {
+          clearInterval(vigilar);
+          try { win.close(); } catch (_) {}
+          if (datos?.error) throw new Error(errorAmigable(datos.error, datos.error_message || datos.message));
+          throw new Error("El proveedor no devolvió el enlace de conexión. Reintenta en unos segundos.");
+        }
+        if (win.closed) { clearInterval(vigilar); return; } // la cerraron a mano
+        win.location.href = url;
+      } catch (e) {
+        clearInterval(vigilar);
+        try { win.close(); } catch (_) {}
+        setConectando(false);
+        showToast("⚠️ " + e.message);
+      }
+    })();
   };
 
   // ── Crear plantilla ────────────────────────────────────────
@@ -324,8 +375,21 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
               API oficial de Meta (los mensajes salen desde tu propio número, con tus plantillas y tu agente).
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <button className="btn-main" onClick={conectar} disabled={conectando} style={{ opacity: conectando ? 0.7 : 1 }}>
-                {conectando ? "Abriendo WhatsApp…" : "💬 Conectar mi número"}
+              <button
+                onClick={conectar}
+                disabled={conectando}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 9,
+                  background: "#25D366", color: "#0A3D2A",
+                  border: "none", borderRadius: 13, padding: "12px 20px",
+                  fontWeight: 900, fontSize: 14.5, fontFamily: "inherit",
+                  cursor: conectando ? "default" : "pointer",
+                  opacity: conectando ? 0.75 : 1,
+                  boxShadow: "0 6px 18px rgba(37,211,102,0.35)",
+                }}
+              >
+                <IconoWhatsApp size={18} />
+                {conectando ? "Abriendo WhatsApp…" : "Conectar mi número"}
               </button>
               <button className="filter-btn" onClick={conectarSameTab} disabled={conectando} title="Si tu navegador bloquea la ventana emergente, abre la conexión en esta misma pestaña">Abrir en esta pestaña ↗</button>
             </div>
@@ -361,7 +425,7 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
 
         {cuentaWhats.length > 0 && (
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="filter-btn" onClick={conectar} disabled={conectando}>{conectando ? "Abriendo…" : "＋ Conectar otro número"}</button>
+            <button className="filter-btn" onClick={conectar} disabled={conectando} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>{conectando ? "Abriendo…" : <><IconoWhatsApp size={14} /> Conectar otro número</>}</button>
             <button className="filter-btn" onClick={() => { setCuentaSel(""); cargarCuentas(); }}>↻ Actualizar</button>
           </div>
         )}

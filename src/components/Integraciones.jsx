@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cuentas, perfiles, conectarRed, completarConectar, plataforma, PLATAFORMAS, paramsCallback, limpiarUrl, errorAmigable } from "../lib/canales.js";
 import { C } from "../lib/paleta.js";
 import AgenteIA from "./AgenteIA.jsx";
+import IconoWhatsApp from "./IconoWhatsApp.jsx";
 
 // Redes que se conectan con la ventana oficial de cada plataforma
 const CONECTABLES = [
@@ -279,13 +280,15 @@ export default function Integraciones({ isMobile, showToast, setTab }) {
                       </div>
                     )}
                     <button
-                      className="filter-btn"
                       onClick={() => conectar(p.id)}
                       disabled={ocupado === p.id}
-                      style={{ width: "100%" }}
                       title={p.id === "whatsapp" ? "Conectar número de WhatsApp" : `Conectar ${p.nombre}`}
+                      className={p.id === "whatsapp" ? undefined : "filter-btn"}
+                      style={p.id === "whatsapp"
+                        ? { width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "#0A3D2A", border: "none", borderRadius: 12, padding: "11px 16px", fontWeight: 900, fontSize: 14, fontFamily: "inherit", cursor: ocupado === p.id ? "default" : "pointer", opacity: ocupado === p.id ? 0.75 : 1 }
+                        : { width: "100%" }}
                     >
-                      {ocupado === p.id ? "Abriendo…" : p.id === "whatsapp" ? "Conectar →" : "＋ Conectar"}
+                      {ocupado === p.id ? "Abriendo…" : p.id === "whatsapp" ? <><IconoWhatsApp size={16} /> Conectar WhatsApp</> : "＋ Conectar"}
                     </button>
                   </div>
                 )}
