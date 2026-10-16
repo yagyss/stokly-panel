@@ -16,9 +16,9 @@ input, button, textarea, select { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
   padding: 28px 16px;
   overflow: hidden;
-  background: linear-gradient(135deg, #EDF2FB 0%, #F7F8FC 45%, #E9F9F4 100%);
+  background: linear-gradient(135deg, #EDF2FB 0%, #F5F6F7 45%, #E9F9F4 100%);
   font-family: 'Nunito','Segoe UI',sans-serif;
-  color: #1A1A2E;
+  color: #1B1D21;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -49,7 +49,7 @@ input, button, textarea, select { font-family: inherit; }
   padding: 48px 42px;
   display: flex; flex-direction: column; gap: 26px;
   color: #fff;
-  background: linear-gradient(160deg, #00C896 0%, #35B4F5 55%, #4A90FF 100%);
+  background: linear-gradient(160deg, #23262C 0%, #2B3138 55%, #39424E 100%);
 }
 .brand::after  { content:""; position:absolute; width:330px; height:330px; border-radius:50%; background:rgba(255,255,255,.10); top:-120px; right:-130px; }
 .brand::before { content:""; position:absolute; width:230px; height:230px; border-radius:50%; background:rgba(255,255,255,.09); bottom:-95px; left:-95px; }
@@ -92,39 +92,39 @@ input, button, textarea, select { font-family: inherit; }
 /* ── formulario ── */
 .form { flex: 1; padding: 46px 46px 42px; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .mobile-logo { display: none; align-items: center; gap: 10px; margin-bottom: 24px; }
-.mobile-logo .logo-sq { width: 38px; height: 38px; font-size: 19px; border-radius: 12px; background: linear-gradient(135deg,#00C896,#4A90FF); box-shadow: 0 8px 18px rgba(0,200,150,.30); }
-.mobile-logo .word { font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: 25px; background: linear-gradient(135deg,#00C896,#4A90FF); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.mobile-logo .logo-sq { width: 38px; height: 38px; font-size: 19px; border-radius: 12px; background: #23262C; box-shadow: 0 8px 18px rgba(0,0,0,.14); }
+.mobile-logo .word { font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: 25px; background: #23262C; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 
 /* selector iniciar / crear */
 .seg { display: flex; background: #F1F3F9; border-radius: 15px; padding: 5px; gap: 4px; margin-bottom: 26px; }
 .seg button {
   flex: 1; border: none; background: transparent;
-  padding: 11px 10px; font-size: 13.5px; font-weight: 800; color: #8B8FA8;
+  padding: 11px 10px; font-size: 13.5px; font-weight: 800; color: #797E8C;
   border-radius: 11px; cursor: pointer; transition: all .18s ease;
 }
 .seg button:hover { color: #5B6178; }
-.seg button.active { background: #fff; color: #1A1A2E; box-shadow: 0 2px 10px rgba(16,29,74,.12); }
+.seg button.active { background: #fff; color: #1B1D21; box-shadow: 0 2px 10px rgba(16,29,74,.12); }
 
-.title { font-size: 25px; font-weight: 900; letter-spacing: -.02em; color: #1A1A2E; }
-.sub { font-size: 14px; font-weight: 600; color: #8B8FA8; margin-top: 7px; margin-bottom: 26px; }
+.title { font-size: 25px; font-weight: 900; letter-spacing: -.02em; color: #1B1D21; }
+.sub { font-size: 14px; font-weight: 600; color: #797E8C; margin-top: 7px; margin-bottom: 26px; }
 
 /* campos */
 .field { margin-bottom: 15px; }
-.lbl { display: block; font-size: 10.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; color: #8B8FA8; margin-bottom: 7px; }
+.lbl { display: block; font-size: 10.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; color: #797E8C; margin-bottom: 7px; }
 .input-wrap { position: relative; }
 .ico { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #A6ACC4; display: flex; pointer-events: none; transition: color .2s; }
 .in {
   width: 100%;
-  background: #F7F8FC;
-  border: 2px solid #EAECF5;
+  background: #F5F6F7;
+  border: 2px solid #E4E6EA;
   border-radius: 15px;
   padding: 14.5px 44px;
-  font-size: 14.5px; font-weight: 600; color: #1A1A2E;
+  font-size: 14.5px; font-weight: 600; color: #1B1D21;
   outline: none; transition: all .2s ease;
 }
 .in::placeholder { color: #A6ACC4; font-weight: 500; }
-.in:focus { border-color: #00C896; background: #fff; box-shadow: 0 0 0 4px rgba(0,200,150,.13); }
-.input-wrap:focus-within .ico { color: #00C896; }
+.in:focus { border-color: #23262C; background: #fff; box-shadow: 0 0 0 4px rgba(0,0,0,.10); }
+.input-wrap:focus-within .ico { color: #23262C; }
 .in.has-eyes { padding-right: 46px; }
 .eye {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
@@ -138,16 +138,16 @@ input, button, textarea, select { font-family: inherit; }
 .pwmeter { flex: 1; height: 6px; background: #EDF0F8; border-radius: 6px; overflow: hidden; }
 .pwmeter-fill { height: 100%; border-radius: 6px; transition: width .35s ease, background .35s ease; }
 .pw-txt { font-size: 11px; font-weight: 900; letter-spacing: .03em; white-space: nowrap; }
-.l0 { color: #FF5A5F } .l0.pwmeter-fill, .pwmeter-fill.l0 { background: #FF5A5F }
-.l1 { color: #FF5A5F } .pwmeter-fill.l1 { background: #FF5A5F }
-.l2 { color: #FF8C42 } .pwmeter-fill.l2 { background: #FF8C42 }
-.l3 { color: #4A90FF } .pwmeter-fill.l3 { background: #4A90FF }
-.l4 { color: #00C896 } .pwmeter-fill.l4 { background: #00C896 }
+.l0 { color: #A3352C } .l0.pwmeter-fill, .pwmeter-fill.l0 { background: #A3352C }
+.l1 { color: #A3352C } .pwmeter-fill.l1 { background: #A3352C }
+.l2 { color: #8A6A1C } .pwmeter-fill.l2 { background: #8A6A1C }
+.l3 { color: #4E5765 } .pwmeter-fill.l3 { background: #4E5765 }
+.l4 { color: #2F6B52 } .pwmeter-fill.l4 { background: #2F6B52 }
 
 /* mensajes */
 .msg { display: flex; gap: 9px; align-items: flex-start; border-radius: 14px; padding: 12px 14px; font-size: 13.5px; font-weight: 700; line-height: 1.5; margin-bottom: 16px; animation: nudge .3s ease; }
-.msg.error { background: #FFF0F0; color: #E5484D; }
-.msg.info  { background: #EEF4FF; color: #3B74E8; }
+.msg.error { background: #FBF2F1; color: #A3352C; }
+.msg.info  { background: #F1F3F5; color: #4E5765; }
 @keyframes nudge { from { opacity: 0; transform: translateY(-5px) } to { opacity: 1; transform: none } }
 
 /* botón principal */
@@ -155,12 +155,12 @@ input, button, textarea, select { font-family: inherit; }
   width: 100%; border: none; cursor: pointer;
   border-radius: 16px; padding: 16px;
   font-size: 15px; font-weight: 900; color: #fff;
-  background: linear-gradient(135deg, #00C896, #4A90FF);
-  box-shadow: 0 12px 26px rgba(0,200,150,.32);
+  background: #23262C;
+  box-shadow: 0 12px 26px rgba(0,0,0,.22);
   transition: all .18s ease;
   display: flex; align-items: center; justify-content: center; gap: 9px;
 }
-.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(0,200,150,.38); }
+.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(0,0,0,.28); }
 .btn-primary:active:not(:disabled) { transform: scale(.985); }
 .btn-primary:disabled { opacity: .75; cursor: wait; }
 .spin { width: 16px; height: 16px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: rot .7s linear infinite; }
@@ -168,7 +168,7 @@ input, button, textarea, select { font-family: inherit; }
 
 /* divisor */
 .divider { display: flex; align-items: center; gap: 14px; margin: 22px 0 16px; }
-.divider span { flex: 1; height: 1.5px; background: #EAECF5; }
+.divider span { flex: 1; height: 1.5px; background: #E4E6EA; }
 .divider b { font-size: 10.5px; font-weight: 900; letter-spacing: .12em; color: #B4B8CC; }
 
 /* google */
@@ -191,18 +191,18 @@ input, button, textarea, select { font-family: inherit; }
   width: 84px; height: 84px; margin: 0 auto 20px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #00C896, #4A90FF);
+  background: #23262C;
   color: #fff; font-size: 40px; font-weight: 900;
-  box-shadow: 0 16px 34px rgba(0,200,150,.35);
+  box-shadow: 0 16px 34px rgba(0,0,0,.20);
   animation: pop .5s cubic-bezier(.2,.9,.3,1.45) both;
 }
 @keyframes pop { from { transform: scale(.4); opacity: 0 } to { transform: scale(1); opacity: 1 } }
 .success h2 { font-size: 23px; font-weight: 900; letter-spacing: -.02em; }
-.success p { font-size: 14px; font-weight: 600; color: #8B8FA8; line-height: 1.65; margin: 10px 0 24px; }
-.success p b { color: #1A1A2E; font-weight: 800; word-break: break-all; }
+.success p { font-size: 14px; font-weight: 600; color: #797E8C; line-height: 1.65; margin: 10px 0 24px; }
+.success p b { color: #1B1D21; font-weight: 800; word-break: break-all; }
 .btn-ghost {
-  width: 100%; margin-top: 10px; background: #F7F8FC;
-  border: 2px solid #EAECF5; border-radius: 16px; padding: 13px;
+  width: 100%; margin-top: 10px; background: #F5F6F7;
+  border: 2px solid #E4E6EA; border-radius: 16px; padding: 13px;
   font-size: 14px; font-weight: 800; color: #5B6178; cursor: pointer; transition: all .15s;
 }
 .btn-ghost:hover { border-color: #D6DAEA; background: #fff; }
@@ -425,7 +425,7 @@ export default function AuthScreen() {
                         placeholder="Ej: Mi Negocio o María" autoComplete="name"
                       />
                     </div>
-                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "#8B8FA8", fontWeight: 600, lineHeight: 1.45 }}>
+                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "#797E8C", fontWeight: 600, lineHeight: 1.45 }}>
                         Puede ser el nombre de tu negocio o tu nombre personal. Después lo cambias cuando quieras y ahí mismo subes su logo.
                       </p>
                   </div>

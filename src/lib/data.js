@@ -197,9 +197,9 @@ const leerMethod = (raw) => {
 // ══════════════════════════════════════════════════════════════
 
 export const ESTADOS = [
-  { id:"pendiente", label:"Pendiente de envío",  emoji:"🕓", color:"#B45309", bg:"#FEF3C7" },
-  { id:"enviado",   label:"Enviado",             emoji:"🚚", color:"#2563EB", bg:"#DBEAFE" },
-  { id:"entregado", label:"Entregado y cobrado", emoji:"✅", color:"#047857", bg:"#D1FAE5" },
+  { id:"pendiente", label:"Pendiente de envío",  emoji:"🕓", color:"#8A6A2B", bg:"#F7F3EA" },
+  { id:"enviado",   label:"Enviado",             emoji:"🚚", color:"#3F4A5C", bg:"#EEF1F5" },
+  { id:"entregado", label:"Entregado y cobrado", emoji:"✅", color:"#2F6B52", bg:"#F0F4F1" },
   { id:"devuelto",  label:"Devuelto",            emoji:"↩️", color:"#B91C1C", bg:"#FEE2E2" },
   { id:"cancelado", label:"Cancelado",           emoji:"🚫", color:"#6B7280", bg:"#F3F4F6" },
 ];

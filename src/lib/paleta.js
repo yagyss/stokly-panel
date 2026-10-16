@@ -1,12 +1,12 @@
 // Paleta de stokly para las secciones nuevas (WhatsApp, Integraciones, Mensajes).
 // ⚠️ Es el MISMO objeto C que vive en src/App.jsx — mantenerlos iguales.
 export const C = {
-  bg: "#F7F8FC", white: "#FFFFFF", text: "#1A1A2E", muted: "#8B8FA8", border: "#EAECF5",
-  green: "#00C896", greenLight: "#E6FAF5", red: "#FF5A5F", redLight: "#FFF0F0",
-  blue: "#4A90FF", blueLight: "#EEF4FF", orange: "#FF8C42", orangeLight: "#FFF4EE",
-  purple: "#8B5CF6", purpleLight: "#F3F0FF", yellow: "#FFB800", yellowLight: "#FFFBEB",
-  teal: "#06B6D4", tealLight: "#E0F7FA",
-  sidebar: "#1A1A2E", sidebarBorder: "rgba(255,255,255,0.08)",
+  bg: "#F5F6F7", white: "#FFFFFF", text: "#1B1D21", muted: "#797E8C", border: "#E4E6EA",
+  green: "#2F6B52", greenLight: "#F0F4F2", red: "#A3352C", redLight: "#FBF2F1",
+  blue: "#4E5765", blueLight: "#F1F3F5", orange: "#8A5A2B", orangeLight: "#F7F3EE",
+  purple: "#5C5674", purpleLight: "#F3F2F6", yellow: "#8A6A1C", yellowLight: "#F8F6EE",
+  teal: "#3A6B72", tealLight: "#F0F4F5",
+  sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
 export const fmt = (n) => "$" + Number(Math.round(n || 0)).toLocaleString("es-CO");

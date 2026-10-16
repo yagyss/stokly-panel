@@ -137,9 +137,9 @@ export default function TeamModal({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div style={{ fontWeight: 900, fontSize: 19 }}>👥 Equipo del panel</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#8B8FA8", fontWeight: 900 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#797E8C", fontWeight: 900 }}>✕</button>
         </div>
-        <div style={{ fontSize: 13, color: "#8B8FA8", fontWeight: 600, marginBottom: 18, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: "#797E8C", fontWeight: 600, marginBottom: 18, lineHeight: 1.5 }}>
           {isOwner
             ? "Invita por correo a tu equipo: todas las personas del panel verán y editarán los mismos productos, ventas y gastos."
             : "Este panel es compartido. Solo el dueño puede invitar a más personas."}
@@ -147,8 +147,8 @@ export default function TeamModal({
 
         {/* ── Invitar ── */}
         {isOwner && (
-          <form onSubmit={send} style={{ background: "#F7F8FC", borderRadius: 18, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#8B8FA8", textTransform: "uppercase", marginBottom: 8 }}>
+          <form onSubmit={send} style={{ background: "#F5F6F7", borderRadius: 18, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#797E8C", textTransform: "uppercase", marginBottom: 8 }}>
               Enviar invitación
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -169,8 +169,8 @@ export default function TeamModal({
               <div
                 style={{
                   marginTop: 10,
-                  background: hint.type === "error" ? "#FFF0F0" : "#E6FAF5",
-                  color: hint.type === "error" ? "#FF5A5F" : "#00A87E",
+                  background: hint.type === "error" ? "#FBF2F1" : "#F0F4F2",
+                  color: hint.type === "error" ? "#A3352C" : "#2F6B52",
                   borderRadius: 12,
                   padding: "10px 12px",
                   fontSize: 12.5,
@@ -182,7 +182,7 @@ export default function TeamModal({
               </div>
             )}
 
-            <div style={{ marginTop: 10, fontSize: 11, color: "#8B8FA8", fontWeight: 600, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 10, fontSize: 11, color: "#797E8C", fontWeight: 600, lineHeight: 1.5 }}>
               ⏱️ El correo sale al instante (el plan gratis de Supabase permite unos 3–4 correos por hora).
             </div>
           </form>
@@ -195,22 +195,22 @@ export default function TeamModal({
         <div className="card" style={{ padding: "4px 16px", marginBottom: 16 }}>
           {members.map((m) => (
             <div key={m.user_id} className="row-item">
-              <div style={{ width: 36, height: 36, background: "linear-gradient(135deg,#00C896,#4A90FF)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "white", fontSize: 15 }}>
+              <div style={{ width: 36, height: 36, background: "#23262C", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "white", fontSize: 15 }}>
                 {avatar(m.email)}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {m.email || "—"}
                 </div>
-                <div style={{ fontSize: 11, color: "#8B8FA8", fontWeight: 600 }}>
+                <div style={{ fontSize: 11, color: "#797E8C", fontWeight: 600 }}>
                   {m.user_id === user.id ? "Tú" : "Equipo"}
                 </div>
               </div>
               <span
                 className="pill"
                 style={{
-                  background: m.role === "owner" ? "#EEF4FF" : "#F3F0FF",
-                  color: m.role === "owner" ? "#4A90FF" : "#8B5CF6",
+                  background: m.role === "owner" ? "#F1F3F5" : "#F3F0FF",
+                  color: m.role === "owner" ? "#4E5765" : "#5C5674",
                 }}
               >
                 {m.role === "owner" ? "👑 Dueño" : "Miembro"}
@@ -219,7 +219,7 @@ export default function TeamModal({
                 <button
                   onClick={() => removeMember(m)}
                   title="Quitar del panel"
-                  style={{ background: "#FFF0F0", border: "none", borderRadius: 9, padding: "6px 9px", cursor: "pointer", color: "#FF5A5F", fontWeight: 900, fontSize: 12, fontFamily: "inherit" }}
+                  style={{ background: "#FBF2F1", border: "none", borderRadius: 9, padding: "6px 9px", cursor: "pointer", color: "#A3352C", fontWeight: 900, fontSize: 12, fontFamily: "inherit" }}
                 >
                   ✕
                 </button>
@@ -227,7 +227,7 @@ export default function TeamModal({
             </div>
           ))}
           {members.length === 0 && (
-            <div style={{ padding: "14px 0", fontSize: 13, color: "#8B8FA8", fontWeight: 700 }}>
+            <div style={{ padding: "14px 0", fontSize: 13, color: "#797E8C", fontWeight: 700 }}>
               Cargando miembros…
             </div>
           )}
@@ -242,22 +242,22 @@ export default function TeamModal({
             <div className="card" style={{ padding: "4px 16px", marginBottom: 8 }}>
               {invites.map((iv) => (
                 <div key={iv.id} className="row-item">
-                  <div style={{ width: 36, height: 36, background: iv.status === "pending" ? "#FFF4EE" : "#E6FAF5", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>
+                  <div style={{ width: 36, height: 36, background: iv.status === "pending" ? "#F7F3EE" : "#F0F4F2", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>
                     {iv.status === "pending" ? "✉️" : "✅"}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 800, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {iv.email}
                     </div>
-                    <div style={{ fontSize: 11, color: "#8B8FA8", fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, color: "#797E8C", fontWeight: 600 }}>
                       {iv.created_at ? new Date(iv.created_at).toLocaleDateString("es-CO") : ""}
                     </div>
                   </div>
                   <span
                     className="pill"
                     style={{
-                      background: iv.status === "pending" ? "#FFF4EE" : "#E6FAF5",
-                      color: iv.status === "pending" ? "#FF8C42" : "#00A87E",
+                      background: iv.status === "pending" ? "#F7F3EE" : "#F0F4F2",
+                      color: iv.status === "pending" ? "#8A5A2B" : "#2F6B52",
                     }}
                   >
                     {iv.status === "pending" ? "Pendiente" : "Aceptada"}
@@ -266,7 +266,7 @@ export default function TeamModal({
                     <button
                       onClick={() => cancelInvite(iv)}
                       title="Cancelar invitación"
-                      style={{ background: "#F7F8FC", border: "none", borderRadius: 9, padding: "6px 9px", cursor: "pointer", color: "#8B8FA8", fontWeight: 900, fontSize: 12, fontFamily: "inherit" }}
+                      style={{ background: "#F5F6F7", border: "none", borderRadius: 9, padding: "6px 9px", cursor: "pointer", color: "#797E8C", fontWeight: 900, fontSize: 12, fontFamily: "inherit" }}
                     >
                       ✕
                     </button>
@@ -274,7 +274,7 @@ export default function TeamModal({
                 </div>
               ))}
               {invites.length === 0 && (
-                <div style={{ padding: "14px 0", fontSize: 13, color: "#8B8FA8", fontWeight: 700 }}>
+                <div style={{ padding: "14px 0", fontSize: 13, color: "#797E8C", fontWeight: 700 }}>
                   Aún no has invitado a nadie
                 </div>
               )}
@@ -282,7 +282,7 @@ export default function TeamModal({
           </>
         )}
 
-        <div style={{ background: "#EEF4FF", borderRadius: 14, padding: "12px 14px", fontSize: 12, color: "#4A90FF", fontWeight: 700, lineHeight: 1.55, marginTop: 10 }}>
+        <div style={{ background: "#F1F3F5", borderRadius: 14, padding: "12px 14px", fontSize: 12, color: "#4E5765", fontWeight: 700, lineHeight: 1.55, marginTop: 10 }}>
           📌 <b>Cómo funciona:</b> la persona recibe un correo, crea su contraseña y al entrar
           su correo queda unido a este panel. Si ya tenía cuenta stokly, solo debe iniciar
           sesión con ese correo.

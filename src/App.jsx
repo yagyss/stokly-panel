@@ -45,12 +45,12 @@ import {
 } from "./lib/data.js";
 
 const C = {
-  bg: "#F7F8FC", white: "#FFFFFF", text: "#1A1A2E", muted: "#8B8FA8", border: "#EAECF5",
-  green: "#00C896", greenLight: "#E6FAF5", red: "#FF5A5F", redLight: "#FFF0F0",
-  blue: "#4A90FF", blueLight: "#EEF4FF", orange: "#FF8C42", orangeLight: "#FFF4EE",
-  purple: "#8B5CF6", purpleLight: "#F3F0FF", yellow: "#FFB800", yellowLight: "#FFFBEB",
-  teal: "#06B6D4", tealLight: "#E0F7FA",
-  sidebar: "#1A1A2E", sidebarBorder: "rgba(255,255,255,0.08)",
+  bg: "#F5F6F7", white: "#FFFFFF", text: "#1B1D21", muted: "#797E8C", border: "#E4E6EA",
+  green: "#2F6B52", greenLight: "#F0F4F2", red: "#A3352C", redLight: "#FBF2F1",
+  blue: "#4E5765", blueLight: "#F1F3F5", orange: "#8A5A2B", orangeLight: "#F7F3EE",
+  purple: "#5C5674", purpleLight: "#F3F2F6", yellow: "#8A6A1C", yellowLight: "#F8F6EE",
+  teal: "#3A6B72", tealLight: "#F0F4F5",
+  sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
 const TABS = [
@@ -676,7 +676,7 @@ function LabelsModal({ products, onClose, showToast }) {
         <div className="card" style={{ padding:"4px 14px", maxHeight:210, overflowY:"auto", marginBottom:12 }}>
           {lista.map(p => (
             <label key={p.id} className="row-item" style={{ cursor:"pointer" }}>
-              <input type="checkbox" checked={sel.has(String(p.id))} onChange={() => toggle(p.id)} style={{ width:18, height:18, accentColor:"#00C896" }} />
+              <input type="checkbox" checked={sel.has(String(p.id))} onChange={() => toggle(p.id)} style={{ width:18, height:18, accentColor:"#23262C" }} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:800, fontSize:13.5 }}>{p.emoji} {p.name}</div>
                 <div style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.color} · T{p.size} · {p.sku || codInterno(p)}</div>
@@ -697,7 +697,7 @@ function LabelsModal({ products, onClose, showToast }) {
             </div>
           </div>
         )}
-        {fallos > 0 && <div style={{ background:C.yellowLight, color:"#B54708", borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⚠️ {fallos} código(s) tienen caracteres especiales — abajo del código se imprime el número igual</div>}
+        {fallos > 0 && <div style={{ background:C.yellowLight, color:"#8A6A2B", borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⚠️ {fallos} código(s) tienen caracteres especiales — abajo del código se imprime el número igual</div>}
         {!listo && <div style={{ background:C.blueLight, color:C.blue, borderRadius:12, padding:"9px 12px", fontSize:12.5, fontWeight:800, marginBottom:10 }}>⏳ Cargando el generador de códigos…</div>}
         <div style={{ display:"flex", gap:10 }}>
           <button className="btn-outline" onClick={onClose} style={{ flex:1 }}>Cerrar</button>
@@ -897,7 +897,7 @@ function PublicCatalog() {
       <style>{STYLES}</style>
 
       {/* Encabezado */}
-      <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", padding:"26px 16px 22px", color:"white" }}>
+      <div style={{ background:"#23262C", padding:"26px 16px 22px", color:"white" }}>
         <div style={{ maxWidth:980, margin:"0 auto", display:"flex", alignItems:"center", gap:14 }}>
           {!!negocio.logo_url && (
             <img src={negocio.logo_url} alt="Logo de la tienda" style={{ width:52, height:52, borderRadius:16, objectFit:"cover", background:"white", border:"2px solid rgba(255,255,255,0.5)", flexShrink:0 }} />
@@ -1097,20 +1097,20 @@ const STYLES = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   input, select, textarea { font-family: inherit; }
-  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #EAECF5; border-radius: 3px; }
+  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #E4E6EA; border-radius: 3px; }
 
   /* ── Layout ── */
-  .app-root { display: flex; min-height: 100vh; background: #F7F8FC; font-family: 'Nunito','Segoe UI',sans-serif; }
+  .app-root { display: flex; min-height: 100vh; background: #F5F6F7; font-family: 'Nunito','Segoe UI',sans-serif; }
 
   /* Sidebar — hidden on mobile */
   .sidebar { display: none; }
 
   /* Mobile bottom nav */
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1.5px solid #EAECF5; padding: 8px 4px 14px; display: flex; justify-content: space-around; z-index: 60; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1.5px solid #E4E6EA; padding: 8px 4px 14px; display: flex; justify-content: space-around; z-index: 60; }
 
   /* Main */
   .main-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; padding-bottom: 90px; }
-  .topbar { background: white; border-bottom: 1.5px solid #EAECF5; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+  .topbar { background: white; border-bottom: 1.5px solid #E4E6EA; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
   .page-content { padding: 20px 16px; }
 
   /* ── Responsive grid helpers ── */
@@ -1120,38 +1120,38 @@ const STYLES = `
 
   /* ── Components ── */
   .card { background: white; border-radius: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-  .btn-main  { background: #00C896; color: white; border: none; border-radius: 14px; padding: 12px 22px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .btn-main  { background: #23262C; color: white; border: none; border-radius: 14px; padding: 12px 22px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: inherit; transition: all 0.15s; }
   .btn-main:active { transform: scale(0.97); }
-  .btn-orange { background: #FF8C42 !important; }
-  .btn-outline { background: white; color: #1A1A2E; border: 2px solid #EAECF5; border-radius: 14px; padding: 11px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
-  .stk-input { background: #F7F8FC; border: 2px solid #EAECF5; border-radius: 14px; padding: 12px 16px; font-size: 14px; width: 100%; outline: none; font-family: inherit; color: #1A1A2E; transition: border 0.2s; }
-  .stk-input:focus { border-color: #00C896; }
+  .btn-orange { background: #3F4753 !important; }
+  .btn-outline { background: white; color: #1B1D21; border: 2px solid #E4E6EA; border-radius: 14px; padding: 11px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .stk-input { background: #F5F6F7; border: 2px solid #E4E6EA; border-radius: 14px; padding: 12px 16px; font-size: 14px; width: 100%; outline: none; font-family: inherit; color: #1B1D21; transition: border 0.2s; }
+  .stk-input:focus { border-color: #23262C; }
   .pill { display: inline-flex; align-items: center; border-radius: 30px; padding: 4px 12px; font-size: 11px; font-weight: 800; }
-  .row-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1.5px solid #EAECF5; }
+  .row-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1.5px solid #E4E6EA; }
   .row-item:last-child { border-bottom: none; }
-  .filter-btn { border: 2px solid #EAECF5; background: white; border-radius: 12px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: #8B8FA8; white-space: nowrap; }
-  .filter-btn.active { border-color: #00C896; color: #00C896; background: #E6FAF5; }
+  .filter-btn { border: 2px solid #E4E6EA; background: white; border-radius: 12px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: #797E8C; white-space: nowrap; }
+  .filter-btn.active { border-color: #23262C; color: #23262C; background: #F0F1F3; }
   .tab-btn-mob { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; }
-  .tab-btn-mob.active { background: #E6FAF5; }
+  .tab-btn-mob.active { background: #F0F1F3; }
   /* "+" central de la barra inferior (atajo de agregar rápido) */
-  .fab-add { width:46px; height:46px; flex-shrink:0; align-self:center; border-radius:50%; background:linear-gradient(135deg,#00C896,#4A90FF); color:#fff; border:none; font-size:27px; font-weight:900; line-height:1; cursor:pointer; box-shadow:0 6px 16px rgba(0,200,150,.40); display:flex; align-items:center; justify-content:center; font-family:inherit; padding:0; }
+  .fab-add { width:46px; height:46px; flex-shrink:0; align-self:center; border-radius:50%; background:#23262C; color:#fff; border:none; font-size:27px; font-weight:900; line-height:1; cursor:pointer; box-shadow:0 6px 16px rgba(0,0,0,.18); display:flex; align-items:center; justify-content:center; font-family:inherit; padding:0; }
   .fab-add:active { transform:scale(.93); }
-  .bar { height: 6px; background: #EAECF5; border-radius: 6px; overflow: hidden; }
+  .bar { height: 6px; background: #E4E6EA; border-radius: 6px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
-  .section-title { font-weight: 900; font-size: 15px; color: #1A1A2E; margin-bottom: 14px; }
-  .cf-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #EAECF5; font-size: 13px; }
+  .section-title { font-weight: 900; font-size: 15px; color: #1B1D21; margin-bottom: 14px; }
+  .cf-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #E4E6EA; font-size: 13px; }
   .cf-row:last-child { border-bottom: none; }
   .color-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.08); flex-shrink: 0; }
-  .stock-btn { width: 32px; height: 32px; border-radius: 10px; border: 2px solid #EAECF5; background: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #8B8FA8; font-family: inherit; }
-  .drop-zone { border: 2.5px dashed #00C896; border-radius: 20px; padding: 32px 20px; text-align: center; cursor: pointer; background: #E6FAF5; }
+  .stock-btn { width: 32px; height: 32px; border-radius: 10px; border: 2px solid #E4E6EA; background: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #797E8C; font-family: inherit; }
+  .drop-zone { border: 2.5px dashed #23262C; border-radius: 20px; padding: 32px 20px; text-align: center; cursor: pointer; background: #F5F6F7; }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
   .sheet { background: white; border-radius: 28px 28px 0 0; padding: 28px 20px 40px; width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; }
-  .handle { width: 40px; height: 4px; background: #EAECF5; border-radius: 2px; margin: 0 auto 24px; }
-  .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #1A1A2E; color: white; border-radius: 16px; padding: 13px 22px; font-weight: 700; font-size: 14px; z-index: 200; white-space: nowrap; animation: popIn 0.3s ease; }
+  .handle { width: 40px; height: 4px; background: #E4E6EA; border-radius: 2px; margin: 0 auto 24px; }
+  .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #1B1D21; color: white; border-radius: 16px; padding: 13px 22px; font-weight: 700; font-size: 14px; z-index: 200; white-space: nowrap; animation: popIn 0.3s ease; }
   @keyframes popIn { from { transform: translateX(-50%) translateY(10px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }
-  .view-toggle { display: flex; background: #F7F8FC; border-radius: 12px; padding: 4px; gap: 2px; flex-shrink: 0; }
-  .view-btn { border: none; background: none; border-radius: 9px; padding: 6px 13px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; color: #8B8FA8; white-space: nowrap; }
-  .view-btn.active { background: white; color: #1A1A2E; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  .view-toggle { display: flex; background: #F5F6F7; border-radius: 12px; padding: 4px; gap: 2px; flex-shrink: 0; }
+  .view-btn { border: none; background: none; border-radius: 9px; padding: 6px 13px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; color: #797E8C; white-space: nowrap; }
+  .view-btn.active { background: white; color: #1B1D21; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
   .group-card { background: white; border-radius: 22px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); overflow: hidden; border: 2px solid transparent; }
   .group-card.has-alert { border-color: rgba(255,90,95,0.25); }
   .icon-box { width: 44px; height: 44px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
@@ -1163,7 +1163,7 @@ const STYLES = `
     .sidebar {
       display: flex; flex-direction: column;
       width: 240px; flex-shrink: 0;
-      background: #1A1A2E;
+      background: #1B1D21;
       position: sticky; top: 0; height: 100vh;
       overflow-y: auto;
     }
@@ -1319,7 +1319,7 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
                     <span className="pill" style={{ background:C.greenLight, color:C.green }} title="Compras registradas">{f.n} compra{f.n===1?"":"s"}{f.nConf!==f.n?` · ${f.nConf} confirmadas`:""}</span>
                     <span className="pill" style={{ background:C.yellowLight, color:C.yellow }} title="Sólo lo confirmado (Entregado y cobrado)">{fmt(f.gastado)}</span>
-                    {f.c.attribution && <span className="pill" style={{ background:"#EEF2FF", color:"#4338CA" }} title="Fuente de adquisición">🧲 {(ATRIBUCIONES.find(a=>a.id===f.c.attribution)||{}).label||f.c.attribution}</span>}
+                    {f.c.attribution && <span className="pill" style={{ background:"#F1F2F6", color:"#4A4E70" }} title="Fuente de adquisición">🧲 {(ATRIBUCIONES.find(a=>a.id===f.c.attribution)||{}).label||f.c.attribution}</span>}
                     {f.c.channel && <span className="pill" style={{ background:C.bg, color:C.muted }} title="Canal de compra">🛍️ {(CANALES_COMPRA.find(x=>x.id===f.c.channel)||{}).label||f.c.channel}</span>}
                     {f.ult && <span className="pill" style={{ background:C.bg, color:C.muted }}>Última: {f.ult}</span>}
                     {f.primera && <span className="pill" style={{ background:C.bg, color:C.muted }}>1ª: {f.primera}</span>}
@@ -1436,7 +1436,7 @@ function NegocioModal({ negocio, workspaceId, onClose, onGuardar, showToast }) {
         <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:18 }}>
           {logo
             ? <img src={logo} alt="Logo" style={{ width:76, height:76, borderRadius:20, objectFit:"cover", background:C.bg, border:"1.5px solid "+C.border }} />
-            : <div style={{ width:76, height:76, borderRadius:20, background:"linear-gradient(135deg,#00C896,#4A90FF)", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:900, fontSize:30, flexShrink:0 }}>{iniciales}</div>}
+            : <div style={{ width:76, height:76, borderRadius:20, background:"#23262C", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:900, fontSize:30, flexShrink:0 }}>{iniciales}</div>}
           <div style={{ flex:1, minWidth:0 }}>
             <input ref={logoRef} type="file" accept="image/*" style={{ display:"none" }} onChange={pickLogo} />
             <button className="filter-btn" onClick={() => logoRef.current && logoRef.current.click()} disabled={subiendo} style={{ width:"100%", marginBottom:6, opacity:subiendo?0.7:1 }}>
@@ -1478,8 +1478,8 @@ function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
           {negocio && negocio.logo_url
             ? <img src={negocio.logo_url} alt="Logo del negocio" style={{ width:36, height:36, borderRadius:12, objectFit:"cover", background:"white", border:"1.5px solid rgba(255,255,255,0.25)" }} />
-            : <div style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:18 }}>S</div>}
-          <span style={{ fontFamily:"'Space Grotesk',sans-serif", fontWeight:700, fontSize:22, background:"linear-gradient(135deg,#00C896,#60A5FA)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>stokly</span>
+            : <div style={{ width:36, height:36, background:"#23262C", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:18 }}>S</div>}
+          <span style={{ fontFamily:"'Space Grotesk',sans-serif", fontWeight:700, fontSize:22, background:"#2F6B52", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>stokly</span>
         </div>
         <button onClick={onNegocio} title="Nombre y logo de tu negocio" style={{ background:"none", border:"none", padding:0, margin:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"block" }}>
           <div style={{ fontSize:12, color:"rgba(255,255,255,0.8)", fontWeight:800, lineHeight:1.3 }}>{(negocio && negocio.name) || "Panel de gestión"}</div>
@@ -1490,7 +1490,7 @@ function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
       {/* Nav items */}
       <nav style={{ padding:"0 12px", flex:1 }}>
         {[...TODAS_TABS, TAB_CRM].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"11px 14px", borderRadius:14, border:"none", cursor:"pointer", fontFamily:"inherit", marginBottom:4, background: tab===t.id ? "rgba(0,200,150,0.12)" : "none", transition:"all 0.15s" }}>
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"11px 14px", borderRadius:14, border:"none", cursor:"pointer", fontFamily:"inherit", marginBottom:4, background: tab===t.id ? "rgba(0,0,0,0.06)" : "none", transition:"all 0.15s" }}>
             <span style={{ fontSize:20 }}>{t.emoji}</span>
             <div style={{ textAlign:"left" }}>
               <div style={{ fontWeight:800, fontSize:14, color: tab===t.id ? C.green : "rgba(255,255,255,0.75)" }}>{t.label}</div>
@@ -1528,7 +1528,7 @@ function Sidebar({ tab, setTab, lowStock, signOut, negocio, onNegocio }) {
 function Splash({ text }) {
   return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:C.bg, gap:16, fontFamily:"'Nunito',sans-serif" }}>
-      <div style={{ width:56, height:56, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:18, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:28, animation:"spinPulse 1.2s ease-in-out infinite" }}>S</div>
+      <div style={{ width:56, height:56, background:"#23262C", borderRadius:18, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:28, animation:"spinPulse 1.2s ease-in-out infinite" }}>S</div>
       <div style={{ fontWeight:800, fontSize:14, color:C.muted }}>{text}</div>
       <style>{`@keyframes spinPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.08);opacity:.7}}`}</style>
     </div>
@@ -1694,7 +1694,7 @@ export default function Stokly() {
                 onClick={() => setUserMenu(v => !v)}
                 title={user.email}
                 aria-label="Menú de usuario"
-                style={{ width:36, height:36, background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15, border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, boxShadow:userMenu ? "0 0 0 3px rgba(0,200,150,.35)" : "none" }}
+                style={{ width:36, height:36, background:"#23262C", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:"white", fontSize:15, border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, boxShadow:userMenu ? "0 0 0 3px rgba(0,0,0,.20)" : "none" }}
               >
                 {negocio && negocio.logo_url
                   ? <img src={negocio.logo_url} alt="Logo del negocio" style={{ width:36, height:36, borderRadius:12, objectFit:"cover", background:"white" }} />
@@ -1703,29 +1703,29 @@ export default function Stokly() {
               {userMenu && (
                 <>
                   <div onClick={() => setUserMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
-                  <div style={{ position:"absolute", top:44, right:0, background:"white", borderRadius:16, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", width:240, zIndex:80, overflow:"hidden", fontFamily:"inherit", textAlign:"left" }}>
-                    <div style={{ padding:"14px 16px 12px", borderBottom:"1.5px solid #EAECF5", background:"#F7F8FC" }}>
-                      {user.user_metadata?.display_name && <div style={{ fontWeight:900, fontSize:14, color:"#1A1A2E" }}>{user.user_metadata.display_name}</div>}
-                      <div style={{ fontSize:12, color:"#8B8FA8", fontWeight:700, wordBreak:"break-all", lineHeight:1.35 }}>{user.email}</div>
+                  <div style={{ position:"absolute", top:44, right:0, background:"white", borderRadius:16, border:"1.5px solid #E4E6EA", boxShadow:"0 12px 34px rgba(16,29,74,.18)", width:240, zIndex:80, overflow:"hidden", fontFamily:"inherit", textAlign:"left" }}>
+                    <div style={{ padding:"14px 16px 12px", borderBottom:"1.5px solid #E4E6EA", background:"#F5F6F7" }}>
+                      {user.user_metadata?.display_name && <div style={{ fontWeight:900, fontSize:14, color:"#1B1D21" }}>{user.user_metadata.display_name}</div>}
+                      <div style={{ fontSize:12, color:"#797E8C", fontWeight:700, wordBreak:"break-all", lineHeight:1.35 }}>{user.email}</div>
                     </div>
                     <button
                       onClick={() => { setUserMenu(false); setModal("negocio"); }}
                       title="Nombre y logo de tu negocio"
-                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #E4E6EA", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                     >
                       🏪 Mi negocio
                     </button>
                     <button
                       onClick={() => { setUserMenu(false); setTab("crm"); }}
                       title="Clientes: sus datos y todo lo que han comprado"
-                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.blue, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #E4E6EA", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.blue, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                     >
                       👥 Clientes (CRM)
                     </button>
                     <button
                       onClick={() => { setUserMenu(false); setModal("team"); }}
                       title="Invitar a tu equipo"
-                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.purple, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                      style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #E4E6EA", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.purple, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                     >
                       👥 Equipo
                     </button>
@@ -1736,7 +1736,7 @@ export default function Stokly() {
                           instalar().then(r => { if (r === "sin-prompt") window.alert(INSTRUCCIONES_INSTALAR); });
                         }}
                         title="Instalar stokly en tu celular o computador (abre como aplicación)"
-                        style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #EAECF5", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
+                        style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", borderBottom:"1.5px solid #E4E6EA", textAlign:"left", cursor:"pointer", fontWeight:800, fontSize:14, color:C.green, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}
                       >
                         📲 Instalar app
                       </button>
@@ -1953,7 +1953,7 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
       <DateRangeFilter rango={rango} onChange={setRango} />
       {/* Hero card */}
-      <div style={{ background:"linear-gradient(135deg,#00C896 0%,#4A90FF 100%)", borderRadius:24, padding:isMobile?22:28, color:"white" }}>
+      <div style={{ background:"#23262C", borderRadius:24, padding:isMobile?22:28, color:"white" }}>
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:4 }}>{rango.id==="todo" ? "Ganancia neta del mes" : "Ganancia · " + rangoLabel(rango)}</div>
         <div style={{ fontSize:isMobile?36:48, fontWeight:900, marginBottom:16 }}>{fmt(profitR)}</div>
         <div className="grid-2" style={{ maxWidth:480 }}>
@@ -2295,14 +2295,14 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
           <button
             onClick={() => setToolsMenu(m => !m)}
             title="Todas las acciones del inventario"
-            style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}
+            style={{ background:"white", border:"1.5px solid #E4E6EA", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}
           >
             ☰ Acciones {toolsMenu ? "▴" : "▾"}
           </button>
           {toolsMenu && (
             <>
               <div onClick={() => setToolsMenu(false)} style={{ position:"fixed", inset:0, zIndex:70 }} />
-              <div style={{ position:"absolute", top:42, right:0, background:"white", borderRadius:14, border:"1.5px solid #EAECF5", boxShadow:"0 12px 34px rgba(16,29,74,.18)", zIndex:80, overflow:"hidden", minWidth:205, fontFamily:"inherit", textAlign:"left" }}>
+              <div style={{ position:"absolute", top:42, right:0, background:"white", borderRadius:14, border:"1.5px solid #E4E6EA", boxShadow:"0 12px 34px rgba(16,29,74,.18)", zIndex:80, overflow:"hidden", minWidth:205, fontFamily:"inherit", textAlign:"left" }}>
                 {[
                   { icon:"📷",   label:"Escanear etiqueta",    desc:"Cámara o código", fn:() => setScanOpen(true) },
                   { icon:"📤",   label:"Compartir catálogo",   desc:"Link o WhatsApp", fn:() => setShareOpen(true) },
@@ -2321,7 +2321,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                     </span>
                   </button>
                 ))}
-                <div style={{ height:1, background:"#EAECF5", margin:"4px 0" }} />
+                <div style={{ height:1, background:"#E4E6EA", margin:"4px 0" }} />
                 <div style={{ padding:"6px 14px 2px", fontSize:10, fontWeight:900, color:C.muted, textTransform:"uppercase", letterSpacing:.4 }}>👁 Vista</div>
                 {[["visual","📋 Visual"],["list","☰ Lista"],["table","🗒️ Tabla"]].map(([id,label]) => (
                   <button
@@ -2335,7 +2335,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                 ))}
                 {products.length>0 && (
                   <>
-                    <div style={{ height:1, background:"#EAECF5", margin:"4px 0" }} />
+                    <div style={{ height:1, background:"#E4E6EA", margin:"4px 0" }} />
                     <button
                       onClick={() => { setToolsMenu(false); clearAll(); }}
                       title="Vaciar todo el inventario (borrado permanente)"
@@ -2491,7 +2491,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
                               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
                                 {fotos.map((u, i) => (
                                   <div key={u + i} style={{ position:"relative", width:60, height:60 }}>
-                                    <img src={u} alt="" onClick={e => { e.stopPropagation(); setVisor({ fotos, i }); }} title="Ver foto completa" style={{ width:60, height:60, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
+                                    <img src={u} alt="" onClick={e => { e.stopPropagation(); setVisor({ fotos, i }); }} title="Ver foto completa" style={{ width:60, height:60, borderRadius:13, objectFit:"cover", border:"1.5px solid #E4E6EA", cursor:"zoom-in" }} />
                                     <button
                                       onClick={e => { e.stopPropagation(); quitarFoto(vs, u); }}
                                       title="Quitar esta foto"
@@ -2534,7 +2534,7 @@ function Inventory({ products, setProducts, lowStock, showToast, setModal, setIm
               <div key={p.id} className="card" style={{ padding:14, border:`2px solid ${p.stock<=p.minStock?C.red+"30":"transparent"}` }}>
                 <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                   {imgsDe(p.image).length
-                    ? <CarruselFotos fotos={imgsDe(p.image)} w={54} h={54} onAbrir={ix => setVisor({ fotos: imgsDe(p.image), i: ix })} style={{ borderRadius:13, border:"1.5px solid #EAECF5" }} />
+                    ? <CarruselFotos fotos={imgsDe(p.image)} w={54} h={54} onAbrir={ix => setVisor({ fotos: imgsDe(p.image), i: ix })} style={{ borderRadius:13, border:"1.5px solid #E4E6EA" }} />
                     : <div className="color-dot" style={{ width:34,height:34, background:getColorCSS(p.color), flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:900, fontSize:14 }}>{p.emoji} {p.name}</div>
@@ -2781,15 +2781,15 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ display:"flex", gap:10, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
         <DateRangeFilter rango={rango} onChange={setRango} />
-        <button onClick={descargarVentas} title="Descargar las ventas del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
+        <button onClick={descargarVentas} title="Descargar las ventas del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #E4E6EA", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
       </div>
-      <div style={{ background:"linear-gradient(135deg,#00C896,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
+      <div style={{ background:"#23262C", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total histórico":"Total · "+rangoLabel(rango)} · 💰 cobrado</div>
         <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
         {/* 💰 Lo que todavía NO es ingreso, aparte y bien visible */}
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
           <span className="pill" style={{ background:"rgba(255,255,255,.2)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }}>✅ {ventasR.filter(esConfirmada).length} confirmadas</span>
-          <span className="pill" style={{ background:pendR>0?"#FEF3C7":"rgba(255,255,255,.14)", color:pendR>0?"#B45309":"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Ventas todavía no entregadas/cobradas: NO cuentan como ingreso">🕓 {fmt(pendR)} pendiente</span>
+          <span className="pill" style={{ background:pendR>0?"#F7F3EA":"rgba(255,255,255,.14)", color:pendR>0?"#8A6A2B":"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Ventas todavía no entregadas/cobradas: NO cuentan como ingreso">🕓 {fmt(pendR)} pendiente</span>
           {devueltasR>0 && <span className="pill" style={{ background:"rgba(255,255,255,.14)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Dinero devuelto dentro de ventas confirmadas">↩️ {fmt(devueltasR)} devueltos</span>}
         </div>
       </div>
@@ -2858,14 +2858,14 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                 <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:5, display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                   <span className="pill" style={{ background:est.bg, color:est.color, fontSize:10.5, padding:"3px 9px", fontWeight:900 }} title={st==="entregado"&&s.confirmedAt?`Confirmado el ${String(s.confirmedAt).slice(0,10)}`:est.label}>{est.emoji} {est.label}</span>
                   <span className="pill" style={{ background:C.bg, color:C.text, fontSize:10.5, padding:"3px 9px" }} title="Modalidad de pago">{mod.emoji} {mod.label}</span>
-                  <span className="pill" style={{ background:atrib==="Sin atribuir"?C.bg:"#EEF2FF", color:atrib==="Sin atribuir"?C.muted:"#4338CA", fontSize:10.5, padding:"3px 9px" }} title="Fuente de adquisición (de dónde vino el cliente)">🧲 {atrib}</span>
+                  <span className="pill" style={{ background:atrib==="Sin atribuir"?C.bg:"#F1F2F6", color:atrib==="Sin atribuir"?C.muted:"#4A4E70", fontSize:10.5, padding:"3px 9px" }} title="Fuente de adquisición (de dónde vino el cliente)">🧲 {atrib}</span>
                   {canal&&<span className="pill" style={{ background:C.bg, color:C.muted, fontSize:10.5, padding:"3px 9px" }} title="Canal de compra (dónde se concretó)">🛍️ {canal}</span>}
                   {(s.returnedQty>0)&&<span className="pill" style={{ background:C.redLight, color:C.red, fontSize:10.5, padding:"3px 9px" }} title="Unidades devueltas de ESTA venta">↩️ {s.returnedQty} ud{s.returnedQty===1?"":"s"} devueltas</span>}
                 </div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8, flexShrink:0, marginLeft:"auto" }}>
                 <div style={{ fontWeight:900, fontSize:isMobile?17:19, color:esConfirmada(s)?C.green:C.muted }}>{esConfirmada(s)?fmt(ingresoDe(s)):fmt(s.total)}</div>
-                {!esConfirmada(s) && <div style={{ fontSize:11, fontWeight:900, color:"#B45309", textAlign:"right", marginTop:-4 }} title="Todavía no es ingreso">⏳ sin cobrar</div>}
+                {!esConfirmada(s) && <div style={{ fontSize:11, fontWeight:900, color:"#8A6A2B", textAlign:"right", marginTop:-4 }} title="Todavía no es ingreso">⏳ sin cobrar</div>}
                 {s.returnedQty>0 && <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", marginTop:-4 }}>↩️ −{fmt(s.returnedAmount||0)}</div>}
                 {s.discount>0 && (
                   <div style={{ fontSize:11, fontWeight:900, color:C.red, textAlign:"right", lineHeight:1.35, marginTop:-4 }}>
@@ -2878,10 +2878,10 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
                   envuelven DENTRO de la tarjeta y nunca se salen del borde. */}
               <div style={{ flex:"1 1 100%", display:"flex", gap:6, flexWrap:"wrap", justifyContent:isMobile?"flex-start":"flex-end" }}>
                   {/* 📦 Acciones del PEDIDO (una sola vez por pedido) */}
-                  {esPrimera&&st==="pendiente"&&<button title="Marcar el pedido como enviado a la mensajería" onClick={()=>cambiarEstado(g,"enviado")} style={btnAccion("#DBEAFE","#2563EB")}>🚚 Enviado</button>}
-                  {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Confirmar que el cliente recibió y pagó — no vuelve a descontar stock ni duplica el ingreso" onClick={()=>confirmarRecibido(g)} style={btnAccion("#D1FAE5","#047857")}>✅ Confirmar recibido</button>}
+                  {esPrimera&&st==="pendiente"&&<button title="Marcar el pedido como enviado a la mensajería" onClick={()=>cambiarEstado(g,"enviado")} style={btnAccion("#EEF1F5","#3F4A5C")}>🚚 Enviado</button>}
+                  {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Confirmar que el cliente recibió y pagó — no vuelve a descontar stock ni duplica el ingreso" onClick={()=>confirmarRecibido(g)} style={btnAccion("#F0F4F1","#2F6B52")}>✅ Confirmar recibido</button>}
                   {esPrimera&&(st==="pendiente"||st==="enviado")&&<button title="Cancelar el pedido: el stock regresa y NO cuenta como ingreso" onClick={()=>{ if(window.confirm("❌ ¿Cancelar este pedido?\n\nEl stock vuelve al inventario y deja de contar como ingreso.")) cambiarEstado(g,"cancelado"); }} style={btnAccion(C.redLight,C.red)}>❌ Cancelar</button>}
-                  {esPrimera&&st==="entregado"&&<button title="Registrar devolución de esta referencia (parcial o total)" onClick={()=>setDevolver(s)} style={btnAccion("#FEF3C7","#B45309")}>↩️ Devolución</button>}
+                  {esPrimera&&st==="entregado"&&<button title="Registrar devolución de esta referencia (parcial o total)" onClick={()=>setDevolver(s)} style={btnAccion("#F7F3EA","#8A6A2B")}>↩️ Devolución</button>}
                   {esPrimera&&st==="cancelado"&&<button title="Reabrir el pedido" onClick={()=>cambiarEstado(g, s.modality==="contraentrega"?"pendiente":"entregado")} style={btnAccion(C.bg,C.text)}>🔄 Reabrir</button>}
                   <button title="Editar esta venta (referencia, color, talla, cantidad, precio, fecha…)" onClick={()=>setEdit(s)} style={{ background:C.blueLight, color:C.blue, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✏️ Editar</button>
                   <button title="Eliminar esta venta (devolución)" onClick={borrar} style={{ background:C.redLight, color:C.red, border:"none", borderRadius:10, padding:isMobile?"6px 10px":"7px 12px", fontWeight:900, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑️ Borrar</button>
@@ -2956,9 +2956,9 @@ function Expenses({ expenses, setExpenses, totalExpenses, showToast, isMobile })
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ display:"flex", gap:10, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
         <DateRangeFilter rango={rango} onChange={setRango} />
-        <button onClick={descargarGastos} title="Descargar los gastos del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #EAECF5", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
+        <button onClick={descargarGastos} title="Descargar los gastos del rango en Excel (.xlsx)" style={{ background:"white", border:"1.5px solid #E4E6EA", borderRadius:12, padding:"9px 13px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>⬇️ Descargar</button>
       </div>
-      <div style={{ background:"linear-gradient(135deg,#FF8C42,#FF5A5F)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
+      <div style={{ background:"#23262C", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85 }}>{rango.id==="todo"?"Total gastos":"Total gastos · "+rangoLabel(rango)}</div>
         <div style={{ fontSize:isMobile?32:44, fontWeight:900 }}>{fmt(totalR)}</div>
       </div>
@@ -3013,14 +3013,8 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
   const gMargin= pct(grossP,totalSalesR);
   const nMargin= pct(gananciaNeta,totalSalesR);
   const cpa    = sC.length > 0 ? mktExp/sC.length : 0;
-  // ── 📣 Indicadores PUBLICITARIOS (nuevos; los de arriba NO cambian) ──
-  //    El gasto de Marketing se cuenta UNA sola vez: es el gasto ya registrado
-  //    en la pestaña Gastos (no se suma por cada venta).
-  const entregadas  = sC.filter(s => unidadesContadas(s) > 0);
-  const ingPubli    = sC.filter(s => s.attribution === "publicidad").reduce((a,s)=>a+ingresoDe(s),0);
-  const costoVentEnt = entregadas.length ? mktExp/entregadas.length : 0;   // costo por venta entregada
-  const roas        = mktExp > 0 ? ingPubli/mktExp : 0;                    // ROAS confirmado (veces)
-  const mer         = mktExp > 0 ? totalSalesR/mktExp : 0;                 // MER (veces)
+  // 📣 Los indicadores de publicidad (ROAS, MER, costo por venta y CPA) viven
+  //    ahora SOLO en Métricas — aquí Finanzas no los duplica.
   const fixed  = opExp + mktExp;
   const breakEven = gMargin > 0 ? (fixed/(gMargin/100)) : 0;
   const frozen = products.reduce((a,p)=>a+p.stock*p.cost,0);
@@ -3080,7 +3074,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
       </div>
       {sec==="cashflow" && (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          <div style={{ background:profitR>=0?"linear-gradient(135deg,#00C896,#06B6D4)":"linear-gradient(135deg,#FF5A5F,#FF8C42)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
+          <div style={{ background:profitR>=0?"#23262C":"#3B2624", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
             <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:2 }}>{profitR>=0?"✅ Flujo positivo":"🚨 Flujo negativo"}{rango.id!=="todo"?" · "+rangoLabel(rango):""}</div>
             <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:14 }}>{fmt(profitR)}</div>
             <div className="grid-2" style={{ maxWidth:400 }}>
@@ -3119,7 +3113,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
       {sec==="profitability" && (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           {/* 💎 Cabecera: la ganancia NETA (ventas − costo − gastos) */}
-          <div style={{ background:"linear-gradient(135deg,#8B5CF6,#4A90FF)", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
+          <div style={{ background:"#23262C", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
             <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>{rango.id==="todo"?"Ganancia neta total":"Ganancia neta · "+rangoLabel(rango)}</div>
             <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:6 }}>{fmt(gananciaNeta)}</div>
             <div style={{ fontSize:13,opacity:0.92,fontWeight:800 }}>💰 {fmt(totalSalesR)} − 📦 {fmt(cogs)} − 💸 {fmt(totalExpensesR)}</div>
@@ -3221,7 +3215,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",marginBottom:4 }}>Punto de Equilibrio</div>
             <div style={{ fontSize:36,fontWeight:900,color:C.orange,marginBottom:10 }}>{fmt(breakEven)}</div>
-            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSalesR,breakEven))}%`, background:totalSalesR>=breakEven?C.green:"linear-gradient(90deg,#FF8C42,#FFB800)" }} /></div>
+            <div className="bar" style={{ height:12,marginBottom:10 }}><div className="bar-fill" style={{ width:`${Math.min(100,pct(totalSalesR,breakEven))}%`, background:totalSalesR>=breakEven?C.green:"#8A8FA0" }} /></div>
             <div style={{ background:totalSalesR>=breakEven?C.greenLight:C.yellowLight,borderRadius:12,padding:12,fontSize:13,fontWeight:700,color:totalSalesR>=breakEven?C.green:C.yellow }}>
               {totalSalesR>=breakEven?"✅ Superaste el punto de equilibrio":`⚠️ Faltan ${fmt(breakEven-totalSalesR)}`}
             </div>
@@ -3246,37 +3240,10 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
             </div>
           </div>
 
-          {/* 📣 PUBLICIDAD: ROAS, MER, costo por venta entregada y CPA — indicadores NUEVOS
-              (los de arriba no cambian: aquí sólo se suman vistas nuevas de la misma data) */}
-          <div className="card" style={{ padding:20 }}>
-            <div className="section-title">📣 Publicidad y atribución</div>
-            <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12 }}>
-              {[
-                { l:"ROAS confirmado", v:roas>0?`${roas.toFixed(1)}×`:"—", c:roas>=3?C.green:roas>0?C.yellow:C.muted,
-                  d:mktExp>0?`${fmt(ingPubli)} en ventas atribuidas a publicidad ÷ ${fmt(mktExp)} invertidos`:"Registra un gasto en Marketing para verlo" },
-                { l:"MER (todas las ventas)", v:mer>0?`${mer.toFixed(1)}×`:"—", c:mer>=3?C.green:mer>0?C.yellow:C.muted,
-                  d:mktExp>0?`${fmt(totalSalesR)} de ingreso total ÷ ${fmt(mktExp)} de publicidad`:"Registra un gasto en Marketing para verlo" },
-                { l:"Costo por venta entregada", v:fmt(costoVentEnt), c:C.blue,
-                  d:`${fmt(mktExp)} de publicidad ÷ ${entregadas.length} ventas entregadas` },
-                { l:"CPA por pedido confirmado", v:fmt(cpa), c:C.purple,
-                  d:`${fmt(mktExp)} de publicidad ÷ ${sC.length} pedidos confirmados` },
-              ].map(k=>(
-                <div key={k.l} style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:14 }}>
-                  <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",lineHeight:1.4 }}>{k.l}</div>
-                  <div style={{ fontSize:26,fontWeight:900,color:k.c,margin:"6px 0 4px" }}>{k.v}</div>
-                  <div style={{ fontSize:11,fontWeight:700,color:C.muted,lineHeight:1.5 }}>{k.d}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop:12, fontSize:11.5, color:C.muted, fontWeight:700, lineHeight:1.6 }}>
-              📌 El gasto de publicidad sale de la pestaña <b>Gastos</b> (categoría <b>Marketing</b>) y se cuenta <b>una sola vez</b>: no se duplica por cada venta. Registra ahí la plataforma y la campaña para ver cuánto rinde cada una.
-            </div>
-          </div>
-
           {/* 🕓 Dinero que todavía NO es ingreso */}
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">🕓 Pendiente de cobro</div>
-            <div style={{ fontSize:36,fontWeight:900,color:pendientesR>0?"#B45309":C.muted,marginBottom:6 }}>{fmt(pendientesR)}</div>
+            <div style={{ fontSize:36,fontWeight:900,color:pendientesR>0?"#8A6A2B":C.muted,marginBottom:6 }}>{fmt(pendientesR)}</div>
             <div style={{ fontSize:13,color:C.muted,fontWeight:700,lineHeight:1.6 }}>
               {pendientesR>0
                 ? `Contraentregas aún no confirmadas: NO cuentan como ingreso ni como costo hasta que el cliente reciba. En Ventas dale a ✅ Confirmar recibido.`
@@ -3409,6 +3376,10 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const ingPubliM = sC.filter(s=>s.attribution==="publicidad").reduce((a,s)=>a+ingresoDe(s),0);
   const roasM     = mktExpM>0 ? ingPubliM/mktExpM : 0;
   const merM      = mktExpM>0 ? totalSR/mktExpM : 0;
+  // 📣 Mismos indicadores que antes vivían en Finanzas: desde ahora sólo aquí.
+  const entregadasM = sC.filter(s => unidadesContadas(s) > 0);
+  const costoVentM  = entregadasM.length ? mktExpM/entregadasM.length : 0;
+  const cpaM        = sC.length > 0 ? mktExpM/sC.length : 0;
   const byColor = products.reduce((acc,p)=>{const v=vend(p);if(!acc[p.color])acc[p.color]=0;acc[p.color]+=v;return acc;},{});
   // unidades vendidas por talla (según el rango elegido)
   const sizeMap = {};
@@ -3469,7 +3440,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   <span style={{ fontSize:11, fontWeight:800, color:C.muted }}> · {a.uds} ud · {a.pedidos} ped.</span>
                 </span>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((a.total/max)*100)}%`, background:a.id==="publicidad"?"linear-gradient(90deg,#7C3AED,#4A90FF)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((a.total/max)*100)}%`, background:a.id==="publicidad"?"#9AA1B0":"#9AA1B0" }} /></div>
             </div>
           );
         })}
@@ -3499,6 +3470,31 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
         )}
         <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:12, lineHeight:1.6 }}>
           📌 Sólo cuentan ventas <b>confirmadas</b> (Entregado y cobrado). Lo que no tiene fuente queda como <b>"Sin atribuir"</b>: así se respeta tu histórico sin inventar datos.
+        </div>
+      </div>
+      {/* 📣 PUBLICIDAD: qué rinde cada peso invertido — vive SOLO en Métricas (decisión del negocio) */}
+      <div className="card" style={{ padding:20, marginTop:16 }}>
+        <div className="section-title">📣 Publicidad y atribución</div>
+        <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12 }}>
+          {[
+            { l:"ROAS confirmado", v:roasM>0?`${roasM.toFixed(1)}×`:"—", c:roasM>=3?C.green:roasM>0?C.yellow:C.muted,
+              d:mktExpM>0?`${fmt(ingPubliM)} en ventas atribuidas a publicidad ÷ ${fmt(mktExpM)} invertidos`:"Registra un gasto en Marketing para verlo" },
+            { l:"MER (todas las ventas)", v:merM>0?`${merM.toFixed(1)}×`:"—", c:merM>=3?C.green:merM>0?C.yellow:C.muted,
+              d:mktExpM>0?`${fmt(totalSR)} de ingreso total ÷ ${fmt(mktExpM)} de publicidad`:"Registra un gasto en Marketing para verlo" },
+            { l:"Costo por venta entregada", v:fmt(costoVentM), c:C.blue,
+              d:`${fmt(mktExpM)} de publicidad ÷ ${entregadasM.length} ventas entregadas` },
+            { l:"CPA por pedido confirmado", v:fmt(cpaM), c:C.purple,
+              d:`${fmt(mktExpM)} de publicidad ÷ ${sC.length} pedidos confirmados` },
+          ].map(k=>(
+            <div key={k.l} style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:14, padding:14 }}>
+              <div style={{ fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",lineHeight:1.4 }}>{k.l}</div>
+              <div style={{ fontSize:26,fontWeight:900,color:k.c,margin:"6px 0 4px" }}>{k.v}</div>
+              <div style={{ fontSize:11,fontWeight:700,color:C.muted,lineHeight:1.5 }}>{k.d}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop:12, fontSize:11.5, color:C.muted, fontWeight:700, lineHeight:1.6 }}>
+          📌 El gasto de publicidad sale de la pestaña <b>Gastos</b> (categoría <b>Marketing</b>) y se cuenta <b>una sola vez</b>: no se duplica por cada venta. Registra ahí la plataforma y la campaña para ver cuánto rinde cada una.
         </div>
       </div>
       <div className={isMobile?"":"desktop-2col"}>
@@ -3533,7 +3529,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </span>
                 ))}
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((r.uds/maxSold)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#00C896,#4A90FF)" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((r.uds/maxSold)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
             </div>
           ))}
           {ranking.length > N_RANK && (
@@ -3565,7 +3561,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   <div style={{ fontSize:11, fontWeight:800, color:C.muted }}>{fmt(m.total)}</div>
                 </div>
               </div>
-              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((m.uds/maxMarca)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#8B5CF6,#4A90FF)" }} /></div>
+              <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((m.uds/maxMarca)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
             </div>
           ))}
           {byBrand.length > N_MARCA && (
@@ -3587,7 +3583,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </div>
                   <span style={{ fontWeight:900,color:C.purple }}>{sold} uds</span>
                 </div>
-                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(1,...Object.values(byColor)))*100)}%`, background:"linear-gradient(90deg,#F472B6,#8B5CF6)" }} /></div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/Math.max(1,...Object.values(byColor)))*100)}%`, background:"#9AA1B0" }} /></div>
               </div>
             ))}
             {Object.entries(byColor).filter(([,sold])=>sold>0).length === 0 && (
@@ -3607,7 +3603,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
               <div key={size} style={{ marginBottom:12, marginTop: i === 0 && bySize.length > 0 ? 14 : 0 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5, alignItems:"center" }}>
                   <div style={{ display:"flex", gap:8, alignItems:"center", minWidth:0 }}>
-                    <span style={{ height:26, padding:"0 10px", borderRadius:9, whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:12.5, background:i===0?"linear-gradient(135deg,#00C896,#4A90FF)":C.bg, border:i===0?"none":"2px solid "+C.border, color:i===0?"#fff":C.text, boxShadow:i===0?"0 4px 12px rgba(0,200,150,.30)":"none" }}>
+                    <span style={{ height:26, padding:"0 10px", borderRadius:9, whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:12.5, background:i===0?"#23262C":C.bg, border:i===0?"none":"2px solid "+C.border, color:i===0?"#fff":C.text, boxShadow:i===0?"0 4px 12px rgba(0,0,0,.14)":"none" }}>
                       T {size}
                     </span>
                     <span style={{ fontWeight:800, fontSize:13, color:i===0?C.green:C.muted }}>
@@ -3616,7 +3612,7 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
                   </div>
                   <span style={{ fontWeight:900, fontSize:13, color:i===0?C.green:C.purple }}>{sold} uds</span>
                 </div>
-                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?"linear-gradient(90deg,#FFB800,#FF8C42)":"linear-gradient(90deg,#4A90FF,#8B5CF6)" }} /></div>
+                <div className="bar"><div className="bar-fill" style={{ width:`${Math.round((sold/maxSize)*100)}%`, background:i===0?"#5B6270":"#9AA1B0" }} /></div>
               </div>
             ))}
             {bySize.length > N_TALLAS && (
@@ -3994,7 +3990,7 @@ function EditReferenceModal({ group, onClose, onSave, workspaceId, showToast }) 
               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", flex:1, minWidth:0 }}>
                 {fotos.map((u, ix) => (
                   <div key={u} style={{ position:"relative", width:58, height:58 }}>
-                    <img src={u} alt="" onClick={() => setVisor({ fotos, i: ix })} title="Ver foto completa" style={{ width:58, height:58, borderRadius:13, objectFit:"cover", border:"1.5px solid #EAECF5", cursor:"zoom-in" }} />
+                    <img src={u} alt="" onClick={() => setVisor({ fotos, i: ix })} title="Ver foto completa" style={{ width:58, height:58, borderRadius:13, objectFit:"cover", border:"1.5px solid #E4E6EA", cursor:"zoom-in" }} />
                     <button
                       onClick={() => setVars(vs => vs.map(v => ((v.color || "—") === color ? { ...v, image: juntarImgs(imgsDe(v.image).filter(x => x !== u)) } : v)))}
                       title="Quitar foto"
@@ -4101,7 +4097,7 @@ function AddProductModal({ onClose, onSave, workspaceId, showToast }) {
           <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
             {image ? (
               <>
-                <img src={image} alt="Vista previa" onClick={() => setVisor({ fotos:[image], i:0 })} title="Ver foto completa" style={{ width:76, height:76, borderRadius:16, objectFit:"cover", border:"2px solid #EAECF5", cursor:"zoom-in" }} />
+                <img src={image} alt="Vista previa" onClick={() => setVisor({ fotos:[image], i:0 })} title="Ver foto completa" style={{ width:76, height:76, borderRadius:16, objectFit:"cover", border:"2px solid #E4E6EA", cursor:"zoom-in" }} />
                 <button className="filter-btn" onClick={()=>photoRef.current&&photoRef.current.click()} disabled={uploading}>{uploading ? "⏳ Subiendo…" : "🔄 Cambiar"}</button>
                 <button className="filter-btn" onClick={()=>setImage("")}>✕ Quitar</button>
               </>
@@ -4364,8 +4360,8 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
             <div style={{ display:"flex",gap:8 }}>
               {MODALIDADES.map(m=>{
                 const on=modality===m.id;
-                const borde=m.id==="pagada"?"#047857":"#2563EB";
-                const fondo=m.id==="pagada"?"#D1FAE5":"#DBEAFE";
+                const borde=m.id==="pagada"?"#2F6B52":"#3F4A5C";
+                const fondo=m.id==="pagada"?"#F0F4F1":"#EEF1F5";
                 return (
                   <button key={m.id} onClick={()=>setModality(m.id)}
                     style={{ flex:1, textAlign:"left", background:on?fondo:C.white, border:"1.5px solid "+(on?borde:C.border),
@@ -4380,7 +4376,7 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
               })}
             </div>
             {modality==="contraentrega" && (
-              <div style={{ marginTop:9, fontSize:11.5, fontWeight:800, color:"#92400E", background:"#FEF3C7", borderRadius:12, padding:"10px 12px", lineHeight:1.55 }}>
+              <div style={{ marginTop:9, fontSize:11.5, fontWeight:800, color:"#92400E", background:"#F7F3EA", borderRadius:12, padding:"10px 12px", lineHeight:1.55 }}>
                 📦 Se guarda como <b>Pendiente de envío</b>: el stock se aparta pero <b>NO es ingreso todavía</b>. Cuando el cliente reciba y pagues, ve a <b>Ventas</b> y dale a <b>✅ Confirmar recibido</b>.
               </div>
             )}
@@ -4446,11 +4442,11 @@ function AddSaleModal({ products, customers, setCustomers, sales, onClose, onSav
             </div>
           )}
           {renglones.length>0 &&(
-            <div style={{ background:modality==="contraentrega"?"#DBEAFE":C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
+            <div style={{ background:modality==="contraentrega"?"#EEF1F5":C.greenLight,borderRadius:16,padding:"16px 20px",textAlign:"center" }}>
               <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>{modality==="contraentrega"?"Total a cobrar al entregar":"Total a cobrar"}</div>
-              <div style={{ fontSize:36,fontWeight:900,color:modality==="contraentrega"?"#2563EB":C.green }}>{fmt(total)}</div>
+              <div style={{ fontSize:36,fontWeight:900,color:modality==="contraentrega"?"#3F4A5C":C.green }}>{fmt(total)}</div>
               {totalDesc>0 && <div style={{ fontSize:12.5,fontWeight:800,color:C.red,marginTop:3 }}>🏷️ Subtotal {fmt(subtotal)} · Rebaja −{fmt(totalDesc)}</div>}
-              {modality==="contraentrega" && <div style={{ fontSize:12,fontWeight:900,color:"#1E40AF",marginTop:6 }}>⏳ Aún NO es ingreso — se confirma al entregar</div>}
+              {modality==="contraentrega" && <div style={{ fontSize:12,fontWeight:900,color:"#3F4A5C",marginTop:6 }}>⏳ Aún NO es ingreso — se confirma al entregar</div>}
             </div>
           )}
         </div>
@@ -4764,7 +4760,7 @@ function AddExpenseModal({ onClose, onSave }) {
                 <input className="stk-input" placeholder="Ej: Retargeting octubre" value={f.campaign} maxLength={60} onChange={e=>setF(p=>({...p,campaign:e.target.value}))} />
               </div>
               <div style={{ fontSize:11, fontWeight:700, color:C.muted, lineHeight:1.5 }}>
-                💡 Así el panel te dice cuánto rinde <b>cada plataforma</b> (ROAS) y este gasto se cuenta <b>una sola vez</b> en Finanzas.
+                💡 Así el panel (Métricas) te dice cuánto rinde <b>cada plataforma</b> (ROAS) y este gasto se cuenta <b>una sola vez</b>.
               </div>
             </div>
           )}
@@ -5157,7 +5153,7 @@ function ImportModal({ onClose, onImport, importView="file", workspaceId }) {
               <div key={i} style={{ display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid "+C.border }}>
                 {url ? (rotas[i]
                   ? <div style={{ width:38,height:38,borderRadius:9,background:C.redLight,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17 }} title="El enlace no carga">⚠️</div>
-                  : <img src={url} alt="" onError={()=>setRotas(prev=>({...prev,[i]:true}))} style={{ width:38, height:38, borderRadius:9, objectFit:"cover", border:"1.5px solid #EAECF5", flexShrink:0 }} />)
+                  : <img src={url} alt="" onError={()=>setRotas(prev=>({...prev,[i]:true}))} style={{ width:38, height:38, borderRadius:9, objectFit:"cover", border:"1.5px solid #E4E6EA", flexShrink:0 }} />)
                 : nombreFoto
                   ? <div style={{ width:38,height:38,borderRadius:9,background:adjunta?C.greenLight:C.bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:adjunta?"1.5px solid "+C.green:"1.5px dashed "+C.border }} title={nombreFoto}>📷</div>
                   : <div className="color-dot" style={{ background:getColorCSS(p.color), flexShrink:0 }} />}

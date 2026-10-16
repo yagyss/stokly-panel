@@ -278,4 +278,4 @@ export const PLATAFORMAS = [
   { id: "imessage",    nombre: "iMessage",     emoji: "💬", color: "#34C759", msj: true },
 ];
 
-export const plataforma = (id) => PLATAFORMAS.find((p) => p.id === id) || { id, nombre: id, emoji: "🔗", color: "#8B8FA8" };
+export const plataforma = (id) => PLATAFORMAS.find((p) => p.id === id) || { id, nombre: id, emoji: "🔗", color: "#797E8C" };
