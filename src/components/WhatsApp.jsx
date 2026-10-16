@@ -8,7 +8,7 @@
 //
 // Todo sale por el proxy de stokly (src/lib/canales.js).
 // ============================================================
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cuentas,
   plantillas,
@@ -62,6 +62,10 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
   const [abriendoForm, setAbriendoForm] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [ok, setOk] = useState("");
+  // Datos precargados para abrir el POPUP de Meta al instante desde el clic
+  // (si el navegador detecta que la ventana no sale de un gesto directo, la bloquea).
+  const perfilIdRef = useRef(null);
+  const fbListoRef = useRef(false);
 
   const cargarCuentas = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargandoCuentas(true);
@@ -157,13 +161,19 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     }
   }, [showToast, cargarCuentas, buscarHastaQueAparezca]);
 
-  // Traemos los datos del popup oficial de Meta sólo cuando aún no hay
-  // número conectado: así, al pulsar el botón no hay que esperar nada
-  // (si no, el navegador bloquea la ventana por venir de una promesa).
+  // Traemos lo necesario para abrir el POPUP de Meta al instante: la config,
+  // el SDK oficial y el id de perfil. Al precargarlo, al pulsar Conectar la
+  // ventana emergente sale del propio clic y el navegador no la bloquea.
   useEffect(() => {
     if (cuentaWhats.length) return;
     canales("/connect/whatsapp/sdk-config")
       .then((d) => { if (d?.appId && d?.configId) setCfgMeta(d); })
+      .catch(() => {});
+    perfiles()
+      .then((p) => { perfilIdRef.current = p?.profiles?.[0]?._id || null; })
+      .catch(() => {});
+    cargarScriptFacebook()
+      .then(() => { fbListoRef.current = true; })
       .catch(() => {});
   }, [cuentaWhats.length]);
 
@@ -173,12 +183,11 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     return () => clearInterval(t);
   }, [cuentaSel, cargarPlantillas]);
 
-  // ── Conectar número (opción principal: mismo recorrido que Meta) ──
-  // Va directo a la ventana de Facebook/WhatsApp EN LA MISMA PESTAÑA:
-  // sin ventana emergente, que es lo que bloqueaba el recorrido antes
-  // (la página auxiliar abría una ventana que el navegador rechazaba y
-  // el flujo se quedaba en el paso 1 sin avanzar).
-  const conectar = async () => {
+  // ── Conectar en la MISMA PESTAÑA (respaldo verificado) ──────
+  // Va directo a la ventana de Facebook/WhatsApp en esta pestaña: es el
+  // recorrido que siempre funciona y sirve de respaldo si el navegador
+  // bloquea la ventana emergente.
+  const conectarSameTab = async () => {
     setConectando(true);
     try {
       const perfil = await perfiles();
@@ -221,25 +230,27 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
     }
   };
 
-  // ── Conectar número (opción directa: ventana oficial de Meta) ──
-  const conectarDirecto = async () => {
-    setConectando(true);
-    try {
-      const perfil = await perfiles();
-      const perfilId = perfil?.profiles?.[0]?._id;
-      if (!perfilId) throw new Error("No se encontró tu perfil");
-      const cfg = cfgMeta || (await canales("/connect/whatsapp/sdk-config"));
-      if (!cfg?.appId || !cfg?.configId) throw new Error("Meta no está disponible ahora: usa la opción principal");
-      setCfgMeta(cfg);
-      await cargarScriptFacebook();
-      window.FB.init({ appId: cfg.appId, cookie: false, xfbml: false, version: "v21.0" });
+  // ── Conectar número (PRINCIPAL: ventana emergente de Meta) ───
+  // Abre la conexión oficial de Facebook/WhatsApp como POPUP sobre la app.
+  // Se dispara SIN esperas justo al clic (config, SDK y perfil van precargados
+  // al entrar a la sección) para que el navegador no la bloquee. Meta la
+  // cierra sola al terminar y el número queda conectado aquí. Si algo no está
+  // listo o bloquean las ventanas, cae a la opción de la misma pestaña.
+  const conectar = () => {
+    const perfilId = perfilIdRef.current;
+    const cfg = cfgMeta;
+    if (cfg?.appId && cfg?.configId && perfilId && window.FB) {
+      try {
+        window.FB.init({ appId: cfg.appId, cookie: false, xfbml: false, version: "v21.0" });
+      } catch (_) { /* un init repetido es inofensivo */ }
+      setConectando(true);
       window.FB.login(
         (res) => {
           setConectando(false);
           const codigo = res && res.authResponse && res.authResponse.code;
           if (!codigo) { showToast("Conexión cancelada"); return; }
           completarConectar("whatsapp", { code: codigo, profileId: perfilId })
-            .then(() => { showToast("✅ Número de WhatsApp conectado"); cargarCuentas(); })
+            .then(() => { showToast("✅ Número de WhatsApp conectado: buscando la cuenta…"); buscarHastaQueAparezca(); })
             .catch((e) => showToast("⚠️ " + e.message));
         },
         {
@@ -250,10 +261,10 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
           auth_type: "rerequest",
         }
       );
-    } catch (e) {
-      setConectando(false);
-      showToast("⚠️ " + e.message);
+      return;
     }
+    // Respaldo: misma pestaña (recorrido verificado).
+    conectarSameTab();
   };
 
   // ── Crear plantilla ────────────────────────────────────────
@@ -316,11 +327,12 @@ export default function WhatsApp({ isMobile, showToast, setTab, negocio }) {
               <button className="btn-main" onClick={conectar} disabled={conectando} style={{ opacity: conectando ? 0.7 : 1 }}>
                 {conectando ? "Abriendo WhatsApp…" : "💬 Conectar mi número"}
               </button>
-              <button className="filter-btn" onClick={conectarDirecto} disabled={conectando} title="Alternativa: la ventana de Meta en una pestaña aparte (si la principal no termina)">Conexión en ventana ↗</button>
+              <button className="filter-btn" onClick={conectarSameTab} disabled={conectando} title="Si tu navegador bloquea la ventana emergente, abre la conexión en esta misma pestaña">Abrir en esta pestaña ↗</button>
             </div>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: C.muted, marginTop: 10, lineHeight: 1.6 }}>
-              Se abre Facebook/WhatsApp <b>en esta misma pestaña</b>: inicia sesión con tu cuenta, acepta los permisos y espera a que
-              termine — al acabar vuelves aquí solo y el número aparece conectado. Nada de ventanas emergentes que puedan bloquearse.
+              Se abre la ventana oficial de Facebook/WhatsApp <b>como una ventana emergente sobre la app</b>: inicias sesión,
+              aceptas los permisos y al terminar la ventana se cierra sola y tu número queda conectado aquí. Si tu navegador
+              bloquea la ventana, usa <b>Abrir en esta pestaña</b>.
             </div>
           </div>
         )}

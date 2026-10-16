@@ -52,6 +52,9 @@ const C = {
   blue: "#3D6E96", blueLight: "#EAF1F7", orange: "#BC6C30", orangeLight: "#FBF1E8",
   purple: "#6B5B9B", purpleLight: "#F1EEF8", yellow: "#9A7A20", yellowLight: "#FAF4E4",
   teal: "#3E7D76", tealLight: "#EAF3F1",
+  // Variantes claras para texto sobre tarjetas oscuras (grafito #23262C):
+  // entrada/ventas = verde claro · salida/gasto = naranja claro · pendiente = ámbar claro
+  greenOn: "#5FC68E", orangeOn: "#EB9668", amberOn: "#E8C063",
   sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
@@ -1959,10 +1962,10 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
         <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:4 }}>{rango.id==="todo" ? "Ganancia neta del mes" : "Ganancia · " + rangoLabel(rango)}</div>
         <div style={{ fontSize:isMobile?36:48, fontWeight:900, marginBottom:16 }}>{fmt(profitR)}</div>
         <div className="grid-2" style={{ maxWidth:480 }}>
-          {[["VENTAS",totalSR],[" GASTOS",totalER]].map(([l,v])=>(
+          {[["VENTAS",totalSR,C.greenOn],[" GASTOS",totalER,C.orangeOn]].map(([l,v,cc])=>(
             <div key={l} style={{ background:"rgba(255,255,255,0.18)", borderRadius:14, padding:"12px 16px" }}>
               <div style={{ fontSize:10, fontWeight:700, opacity:0.8, marginBottom:4 }}>{l}</div>
-              <div style={{ fontSize:isMobile?18:22, fontWeight:900 }}>{fmt(v)}</div>
+              <div style={{ fontSize:isMobile?18:22, fontWeight:900, color:cc }}>{fmt(v)}</div>
             </div>
           ))}
         </div>
@@ -1970,7 +1973,7 @@ function Home({ products, sales, expenses, totalSales, totalExpenses, profit, lo
         {pendR > 0 && (
           <div style={{ marginTop:14, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", background:"rgba(255,255,255,0.2)", borderRadius:14, padding:"10px 14px" }}>
             <span style={{ fontSize:15 }}>🕓</span>
-            <span style={{ fontWeight:900, fontSize:14 }}>{fmt(pendR)} por cobrar</span>
+            <span style={{ fontWeight:900, fontSize:14, color:C.amberOn }}>{fmt(pendR)} por cobrar</span>
             <span style={{ fontSize:12, fontWeight:700, opacity:0.9 }}>· contraentregas sin confirmar: no entran como ingreso</span>
           </div>
         )}
@@ -3080,8 +3083,8 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
             <div style={{ fontSize:13, fontWeight:700, opacity:0.85, marginBottom:2 }}>{profitR>=0?"✅ Flujo positivo":"🚨 Flujo negativo"}{rango.id!=="todo"?" · "+rangoLabel(rango):""}</div>
             <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:14 }}>{fmt(profitR)}</div>
             <div className="grid-2" style={{ maxWidth:400 }}>
-              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>ENTRADAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalSalesR)}</div></div>
-              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>SALIDAS</div><div style={{ fontSize:18,fontWeight:900 }}>{fmt(totalExpensesR)}</div></div>
+              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>ENTRADAS</div><div style={{ fontSize:18,fontWeight:900, color:C.greenOn }}>{fmt(totalSalesR)}</div></div>
+              <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:13,padding:"10px 14px" }}><div style={{ fontSize:10,opacity:0.8,fontWeight:700,marginBottom:3 }}>SALIDAS</div><div style={{ fontSize:18,fontWeight:900, color:C.orangeOn }}>{fmt(totalExpensesR)}</div></div>
             </div>
           </div>
           <div className={isMobile?"":"desktop-2col"}>
@@ -3118,7 +3121,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div style={{ background:"#23262C", borderRadius:22, padding:isMobile?20:24, color:"white" }}>
             <div style={{ fontSize:13,fontWeight:700,opacity:0.85,marginBottom:2 }}>{rango.id==="todo"?"Ganancia neta total":"Ganancia neta · "+rangoLabel(rango)}</div>
             <div style={{ fontSize:isMobile?32:44, fontWeight:900, marginBottom:6 }}>{fmt(gananciaNeta)}</div>
-            <div style={{ fontSize:13,opacity:0.92,fontWeight:800 }}>💰 {fmt(totalSalesR)} − 📦 {fmt(cogs)} − 💸 {fmt(totalExpensesR)}</div>
+            <div style={{ fontSize:13,opacity:0.92,fontWeight:800 }}>💰 <span style={{ color:C.greenOn }}>{fmt(totalSalesR)}</span> − 📦 <span style={{ color:C.orangeOn }}>{fmt(cogs)}</span> − 💸 <span style={{ color:C.orangeOn }}>{fmt(totalExpensesR)}</span></div>
             <div style={{ fontSize:13,opacity:0.85,marginTop:3 }}>Bruto: {gMargin}% · Neto: {nMargin}%</div>
           </div>
 

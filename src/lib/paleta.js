@@ -8,6 +8,8 @@ export const C = {
   blue: "#3D6E96", blueLight: "#EAF1F7", orange: "#BC6C30", orangeLight: "#FBF1E8",
   purple: "#6B5B9B", purpleLight: "#F1EEF8", yellow: "#9A7A20", yellowLight: "#FAF4E4",
   teal: "#3E7D76", tealLight: "#EAF3F1",
+  // Variantes claras sobre fondo oscuro (mantener igual que App.jsx):
+  greenOn: "#5FC68E", orangeOn: "#EB9668", amberOn: "#E8C063",
   sidebar: "#1B1D21", sidebarBorder: "rgba(255,255,255,0.08)",
 };
 
