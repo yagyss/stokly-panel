@@ -2635,6 +2635,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
   const [rango, setRango] = useState({ id:"todo" });
   const [edit, setEdit] = useState(null); // ✏️ venta abierta para corregir
   const [filtro, setFiltro] = useState("todo");      // ⬇️ filtra por estado del pedido
+  const [busqueda, setBusqueda] = useState("");      // 🔍 busca una venta concreta
   const [devolver, setDevolver] = useState(null);    // ↩️ renglón abierto para devolver
   const ventasR = sales.filter(s => enRango(s.date, rango));
   // 💰 El gran total es lo COBRADO de verdad (confirmado). Lo pendiente
@@ -2644,7 +2645,22 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
   const devueltasR = ventasR.reduce((a,s)=>a+(Number(s.returnedAmount)||0),0);
   const byMethod = confirmadas(ventasR).reduce((acc,s)=>{acc[s.method]=(acc[s.method]||0)+ingresoDe(s);return acc;},{});
   // ⬇️ Filtrado por estado (todo / pendiente / enviado / entregado / …)
-  const listaR = filtro === "todo" ? ventasR : ventasR.filter(s => (s.status || "entregado") === filtro);;
+  const baseR = filtro === "todo" ? ventasR : ventasR.filter(s => (s.status || "entregado") === filtro);
+  // 🔍 Búsqueda: un pedido se muestra ENTERO si coincide cualquiera de sus
+  //    renglones (cliente, producto, SKU, fecha…) — así aparece también el
+  //    botón ✅ Confirmar recibido del primer renglón del pedido.
+  const textoDe = (s) => {
+    const p = products.find(x => String(x.id) === String(s.productId));
+    const c = (customers || []).find(x => String(x.id) === String(s.customerId));
+    return [p?.name, p?.color, p?.size, p?.sku, c?.name, c?.city, c?.phone, s.date, s.method]
+      .filter(Boolean).join(" ").toLowerCase();
+  };
+  const q = busqueda.trim().toLowerCase();
+  let listaR = baseR;
+  if (q) {
+    const gruposCon = new Set(baseR.filter(s => textoDe(s).includes(q)).map(s => grupoVenta(s.id)));
+    listaR = baseR.filter(s => gruposCon.has(grupoVenta(s.id)));
+  }
   // 🧾 Cuántas referencias formaron la venta de la que viene cada renglón
   const porGrupo = {};
   ventasR.forEach(s => { const k = grupoVenta(s.id); porGrupo[k] = (porGrupo[k] || 0) + 1; });
@@ -2798,6 +2814,23 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
           {devueltasR>0 && <span className="pill" style={{ background:"rgba(255,255,255,.14)", color:"white", fontSize:11.5, padding:"4px 10px", fontWeight:800 }} title="Dinero devuelto dentro de ventas confirmadas">↩️ {fmt(devueltasR)} devueltos</span>}
         </div>
       </div>
+      {/* 🔍 Buscar una venta concreta (cliente, producto, SKU, fecha…) */}
+      <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+        <input
+          className="stk-input"
+          placeholder="🔍 Buscar venta… cliente, producto, SKU, teléfono, fecha"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          aria-label="Buscar una venta"
+          style={{ flex:"1 1 240px", minWidth:0, marginBottom:0 }}
+        />
+        {busqueda && (
+          <button onClick={() => setBusqueda("")} title="Limpiar la búsqueda"
+            style={{ background:C.bg, border:"1.5px solid "+C.border, borderRadius:11, padding:"10px 12px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit", color:C.text, whiteSpace:"nowrap" }}>
+            ✕ Limpiar
+          </button>
+        )}
+      </div>
       {/* ⬇️ Filtrar por estado del pedido */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
         {[{ id:"todo", label:"Todo", emoji:"📋", color:C.text }, ...ESTADOS].map(e=>{
@@ -2894,7 +2927,7 @@ function Sales({ sales, setSales, products, customers, setProducts, totalSales, 
             </div>
           );
         })}
-        {listaR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>{ventasR.length===0 ? "Sin ventas en este rango 📅" : "Ningún pedido en este estado 🔍"}</div>}
+        {listaR.length===0 && <div style={{ textAlign:"center", padding:30, color:C.muted, fontWeight:700 }}>{ventasR.length===0 ? "Sin ventas en este rango 📅" : q ? `Sin resultados para "${busqueda.trim()}" 🔍` : "Ningún pedido en este estado 🔍"}</div>}
       </div>
       {/* ✏️ Corregir una venta ya registrada */}
       {edit && (
