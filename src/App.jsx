@@ -1766,7 +1766,7 @@ export default function Stokly() {
           {tab==="sales"     && <Sales     sales={sales} setSales={setSales} products={products} customers={customers} setProducts={setProducts} totalSales={totalSales} isMobile={isMobile} showToast={showToast} user={user} />}
           {tab==="expenses"  && <Expenses  expenses={expenses} setExpenses={setExpenses} totalExpenses={totalExpenses} showToast={showToast} isMobile={isMobile} />}
           {tab==="finance"   && <Finance   products={products} sales={sales} expenses={expenses} totalSales={totalSales} totalExpenses={totalExpenses} profit={profit} isMobile={isMobile} />}
-          {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} />}
+          {tab==="metrics"   && <Metrics   products={products} sales={sales} expenses={expenses} totalSales={totalSales} profit={profit} isMobile={isMobile} setSales={setSales} showToast={showToast} />}
           {/* 👥 Clientes: sección integrada (igual que Ventas / Métricas) */}
           {tab==="crm"       && <CrmModal  customers={customers} setCustomers={setCustomers} sales={sales} setSales={setSales} products={products} showToast={showToast} isMobile={isMobile} embebido />}
           {/* 📣 Canales: WhatsApp, Integraciones y Mensajes */}
@@ -3321,7 +3321,7 @@ function CabeceraPlegable({ titulo, total, etqTotal, limite, abierto, onToggle, 
   );
 }
 
-function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
+function Metrics({ products, sales, expenses, totalSales, profit, isMobile, setSales, showToast }) {
   const [rango, setRango] = useState({ id:"todo" });
   // 🧲 Filtrar las ventas por FUENTE de adquisición (orgánico, publicidad…)
   const [atrFiltro, setAtrFiltro] = useState("todo");
@@ -3428,6 +3428,29 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
   const maxSold = ranking.length ? (ranking[0].uds || 1) : 1;
   const toBuy = products.filter(p=>p.stock<p.minStock*2).sort((a,b)=>vend(b)-vend(a));
   const margin = totalSR?pct(profitR,totalSR):0;
+  // 📣 Reclasificar de una vez las ventas SIN atribuir → Publicidad (Meta · WhatsApp).
+  //    Lo decide el dueño desde su app: no se inventa dato, se registra el que YA sabe.
+  const sinAtribuirTotal = sales.filter(s => !s.attribution).length;
+  const clasificarPublicidad = () => {
+    const n = sinAtribuirTotal;
+    if (!n) return;
+    const seguro = window.confirm(
+      `📣 Pasar ${n} venta${n===1?"":"s"} sin atribuir a PUBLICIDAD\n\n` +
+      `Se marcarán como:\n` +
+      `• Fuente: Publicidad\n` +
+      `• Plataforma: Meta (FB/IG)\n` +
+      `• Canal: WhatsApp (sólo donde no había dato)\n\n` +
+      `Con esto ROAS, MER y CPA las contarán como publicidad.\n` +
+      `¿Quieres continuar?`
+    );
+    if (!seguro) return;
+    setSales(prev => prev.map(s =>
+      !s.attribution
+        ? { ...s, attribution:"publicidad", platform:"meta", channel: s.channel || "whatsapp" }
+        : s
+    ));
+    showToast(`✅ ${n} venta${n===1?"":"s"} → Publicidad · Meta · WhatsApp`);
+  };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <DateRangeFilter rango={rango} onChange={setRango} />
@@ -3509,6 +3532,20 @@ function Metrics({ products, sales, expenses, totalSales, profit, isMobile }) {
         <div style={{ fontSize:11.5, color:C.muted, fontWeight:700, marginTop:12, lineHeight:1.6 }}>
           📌 Sólo cuentan ventas <b>confirmadas</b> (Entregado y cobrado). Lo que no tiene fuente queda como <b>"Sin atribuir"</b>: así se respeta tu histórico sin inventar datos.
         </div>
+        {sinAtribuirTotal > 0 && (
+          <div style={{ marginTop:14, background:C.bg, border:"1.5px dashed "+C.border, borderRadius:14, padding:14 }}>
+            <div style={{ fontSize:12.5, fontWeight:800, color:C.text, lineHeight:1.65, marginBottom:10 }}>
+              🧲 Tienes <b>{sinAtribuirTotal}</b> venta{sinAtribuirTotal===1?"":"s"} sin atribuir (lo histórico).
+              Si salieron de <b>publicidad en Meta por WhatsApp</b>, clasifícalas de una vez:
+            </div>
+            <button
+              onClick={clasificarPublicidad}
+              style={{ background:C.purple, color:"white", border:"none", borderRadius:12, padding:"11px 15px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}
+            >
+              📣 Pasar {sinAtribuirTotal} sin atribuir a Publicidad (Meta · WhatsApp)
+            </button>
+          </div>
+        )}
       </div>
       {/* 📣 PUBLICIDAD: qué rinde cada peso invertido — vive SOLO en Métricas (decisión del negocio) */}
       <div className="card" style={{ padding:20, marginTop:16 }}>
