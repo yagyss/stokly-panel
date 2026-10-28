@@ -1228,6 +1228,27 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
     .sort((a,b)=> (b.gastado - a.gastado) || String(a.c.name).localeCompare(String(b.c.name)));
   const totalGastado = fichas.reduce((a,f)=>a+f.gastado,0);
   const totalCompras = fichas.reduce((a,f)=>a+f.n,0);
+  // 🧲 Reclasificar clientes SIN fuente → Publicidad · WhatsApp (lo decide el dueño).
+  //    Ninguno contradice: sus ventas también vienen sin fuente (histórico).
+  const sinAtribuirCli = (customers||[]).filter(c => !c.attribution).length;
+  const clasificarClientes = () => {
+    const n = sinAtribuirCli;
+    if (!n) return;
+    const seguro = window.confirm(
+      `🧲 Pasar ${n} cliente${n===1?"":"s"} sin fuente a PUBLICIDAD\n\n` +
+      `Se marcarán como:\n` +
+      `• Fuente: Publicidad\n` +
+      `• Canal: WhatsApp (sólo donde no había dato)\n\n` +
+      `¿Quieres continuar?`
+    );
+    if (!seguro) return;
+    setCustomers(prev => prev.map(c =>
+      !c.attribution
+        ? { ...c, attribution:"publicidad", channel: c.channel || "whatsapp" }
+        : c
+    ));
+    showToast(`✅ ${n} cliente${n===1?"":"s"} → Publicidad · WhatsApp`);
+  };
 
   const guardar = () => {
     const n = String((form && form.name) || "").trim();
@@ -1267,6 +1288,20 @@ function CrmModal({ customers, setCustomers, sales, setSales, products, onClose,
         <div style={{ fontSize:12.5, color:C.muted, fontWeight:700, marginBottom:14 }}>
           {customers.length} cliente{customers.length===1?"":"s"} · {totalCompras} compra{totalCompras===1?"":"s"} · {fmt(totalGastado)} facturados
         </div>
+        {sinAtribuirCli > 0 && (
+          <div style={{ background:C.bg, border:"1.5px dashed "+C.border, borderRadius:14, padding:14, marginBottom:14 }}>
+            <div style={{ fontSize:12.5, fontWeight:800, color:C.text, lineHeight:1.65, marginBottom:10 }}>
+              🧲 Tienes <b>{sinAtribuirCli}</b> cliente{sinAtribuirCli===1?"":"s"} sin fuente.
+              Si te llegaron por <b>publicidad en Meta por WhatsApp</b>, clasifícalos de una vez:
+            </div>
+            <button
+              onClick={clasificarClientes}
+              style={{ background:C.purple, color:"white", border:"none", borderRadius:12, padding:"11px 15px", fontWeight:900, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}
+            >
+              📣 Pasar {sinAtribuirCli} sin fuente a Publicidad · WhatsApp
+            </button>
+          </div>
+        )}
 
         {/* ➕ Alta / ✏️ edición del cliente */}
         {form && (
