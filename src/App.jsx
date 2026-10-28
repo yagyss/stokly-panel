@@ -3308,7 +3308,7 @@ function Finance({ products, sales, expenses, totalSales, totalExpenses, profit,
           <div className="card" style={{ padding:20 }}>
             <div className="section-title">💹 ROI del negocio</div>
             <div style={{ textAlign:"center",padding:"10px 0 20px" }}>
-              <div style={{ fontSize:52,fontWeight:900,color:gananciaNeta>0?C.green:C.red }}>{pct(gananciaNeta,totalExpensesR)}%</div>
+              <div style={{ fontSize:52,fontWeight:900,color:gananciaNeta>0?C.green:C.red }}>{totalExpensesR>0?(gananciaNeta/totalExpensesR).toFixed(2).replace(".",",")+"x":"—"}</div>
               <div style={{ fontSize:13,color:C.muted,fontWeight:700 }}>ganancia neta sobre tus gastos</div>
             </div>
           </div>
